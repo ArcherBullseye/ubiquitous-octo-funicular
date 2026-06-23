@@ -2,28 +2,45 @@ manifestVersion: 1
 id: archerbullseye-solar-miner
 name: Solar Miner
 tagline: Control your Bitcoin miner with solar power
-icon: https://raw.githubusercontent.com/ArcherBullseye/solis-luxos-controller/main/static/icon.svg
-category: Finance
-version: "1.3.1"
+icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-solar-miner/icon.svg
+category: bitcoin
+version: "1.5.3"
 port: 3000
 description: >-
-  Monitor your Solis solar inverter and automatically control your LuxOS Bitcoin miner based on battery state of charge.
+  Monitor your Solis solar inverter and automatically control your LuxOS
+  Bitcoin miner based on battery state of charge.
 
 
-  Features a smart start mode that reads the weather forecast — on sunny days with 3+ hours of strong irradiance, the miner starts early (before the battery hits 80%) to make the most of excess PV generation.
+  Features smart start mode using learned per-hour PV efficiency, weather
+  forecasting, Telegram alerts, Luxor pool stats, and live BTC price.
+  Fully configurable via the built-in web UI — no config files needed.
 
 
-  Live dashboard shows SOC, battery power, PV input, grid, load, and backup power. Fully configurable thresholds via the built-in web UI.
+  Also controls a Tuya Wi-Fi dehumidifier based on humidity thresholds.
 developer: ArcherBullseye
-website: https://github.com/ArcherBullseye/solis-luxos-controller
+website: https://github.com/ArcherBullseye/ubiquitous-octo-funicular
 submitter: ArcherBullseye
 submission: https://github.com/ArcherBullseye/ubiquitous-octo-funicular
-repo: https://github.com/ArcherBullseye/solis-luxos-controller
-support: https://github.com/ArcherBullseye/solis-luxos-controller/issues
+repo: https://github.com/ArcherBullseye/ubiquitous-octo-funicular
+support: https://github.com/ArcherBullseye/ubiquitous-octo-funicular/issues
 gallery:
-  - https://raw.githubusercontent.com/ArcherBullseye/solis-luxos-controller/main/static/icon.svg
+  - https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-solar-miner/icon.svg
 releaseNotes: >-
-  Initial release.
+  v1.5.3: Add show/hide eye button to all sensitive fields (Solis API
+  secret, dehumidifier local key, Luxor API key, Telegram bot token).
+  Adds autocomplete=new-password to prevent browser autofill from
+  silently overwriting saved credentials.
+
+
+  v1.5.2: Fix dehumidifier local key being cleared by browser autofill.
+
+
+  v1.5.1: Fix Loading screen after seasonal efficiency update.
+
+
+  v1.5.0: Seasonal PV efficiency modeling — per-month efficiency curves
+  (288 cells), radiation tracking, neighboring-month fallback, and
+  efficiency chart month selector.
 dependencies: []
 path: ""
 defaultUsername: ""

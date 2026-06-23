@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Dark rounded background -->
+  <rect width="512" height="512" rx="90" fill="#0f1117"/>
+
+  <!-- Amber glow behind bolt -->
+  <ellipse cx="256" cy="248" rx="140" ry="155" fill="#f59e0b" opacity="0.10"/>
+
+  <!-- Lightning bolt, large and centered -->
+  <polygon
+    points="295,60 160,285 248,285 210,452 355,220 262,220 310,60"
+    fill="#f59e0b"
+    stroke="#f59e0b"
+    stroke-width="4"
+    stroke-linejoin="round"/>
+
+  <!-- Bottom label bar -->
+  <rect x="80" y="390" width="352" height="72" rx="14" fill="#f59e0b" opacity="0.15"/>
+  <text
+    x="256" y="442"
+    font-family="system-ui, -apple-system, sans-serif"
+    font-size="44"
+    font-weight="700"
+    fill="#f59e0b"
+    text-anchor="middle"
+    letter-spacing="2">SOLAR MINER</text>
+</svg>
