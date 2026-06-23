@@ -4,7 +4,7 @@ on:
   push:
     branches: [master]
     paths:
-      - 'archerbullseye-solar-miner/**'
+      - 'archerbullseye-store-solar-miner/**'
 
 jobs:
   build:
@@ -26,7 +26,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: ./archerbullseye-solar-miner
+          context: ./archerbullseye-store-solar-miner
           push: true
           tags: |
             ghcr.io/archerbullseye/solar-miner:latest
