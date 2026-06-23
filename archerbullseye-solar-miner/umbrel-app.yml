@@ -1,0 +1,30 @@
+manifestVersion: 1
+id: archerbullseye-solar-miner
+name: Solar Miner
+tagline: Control your Bitcoin miner with solar power
+icon: https://raw.githubusercontent.com/ArcherBullseye/solis-luxos-controller/main/static/icon.svg
+category: Finance
+version: "1.3.1"
+port: 3000
+description: >-
+  Monitor your Solis solar inverter and automatically control your LuxOS Bitcoin miner based on battery state of charge.
+
+
+  Features a smart start mode that reads the weather forecast — on sunny days with 3+ hours of strong irradiance, the miner starts early (before the battery hits 80%) to make the most of excess PV generation.
+
+
+  Live dashboard shows SOC, battery power, PV input, grid, load, and backup power. Fully configurable thresholds via the built-in web UI.
+developer: ArcherBullseye
+website: https://github.com/ArcherBullseye/solis-luxos-controller
+submitter: ArcherBullseye
+submission: https://github.com/ArcherBullseye/ubiquitous-octo-funicular
+repo: https://github.com/ArcherBullseye/solis-luxos-controller
+support: https://github.com/ArcherBullseye/solis-luxos-controller/issues
+gallery:
+  - https://raw.githubusercontent.com/ArcherBullseye/solis-luxos-controller/main/static/icon.svg
+releaseNotes: >-
+  Initial release.
+dependencies: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
