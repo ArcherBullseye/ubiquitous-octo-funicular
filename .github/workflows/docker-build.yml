@@ -1,0 +1,33 @@
+name: Build and push Solar Miner Docker image
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'archerbullseye-solar-miner/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./archerbullseye-solar-miner
+          push: true
+          tags: |
+            ghcr.io/archerbullseye/solar-miner:latest
+            ghcr.io/archerbullseye/solar-miner:${{ github.sha }}

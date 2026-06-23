@@ -1,0 +1,2006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>⚡ Solar Miner</title>
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg" />
+  <link rel="shortcut icon" href="/static/icon.svg" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0f1117;
+      --card:    #1a1d27;
+      --border:  #2a2d3a;
+      --text:    #e2e8f0;
+      --muted:   #94a3b8;
+      --amber:   #f59e0b;
+      --green:   #22c55e;
+      --red:     #ef4444;
+      --blue:    #3b82f6;
+    }
+
+    html, body { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--card);
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: clamp(22px, 2.2vw, 30px); font-weight: 700; }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .status-info { display: flex; align-items: center; gap: 8px; }
+    .status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--red);
+      flex-shrink: 0;
+    }
+    .status-dot.fresh { background: var(--green); }
+    #last-updated { color: var(--muted); font-size: 12px; }
+
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      transition: opacity .15s;
+    }
+    button:hover { opacity: .85; }
+    .btn-settings {
+      background: var(--border);
+      color: var(--text);
+    }
+    .btn-amber  { background: var(--amber);  color: #000; }
+    .btn-green  { background: var(--green);  color: #000; }
+    .btn-red    { background: var(--red);    color: #fff; }
+    .btn-ghost  { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── Main layout ── */
+    main { padding: clamp(10px, 1.5vw, 20px) clamp(10px, 2vw, 24px); display: flex; flex-direction: column; gap: clamp(8px, 1vw, 14px); flex: 1; min-height: 0; }
+
+    /* ── Power cards grid ── */
+    .power-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: clamp(8px, 1vw, 14px);
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: clamp(8px, 1vw, 12px);
+      padding: clamp(10px, 1.2vw, 16px);
+    }
+
+    .card-label {
+      font-size: clamp(11px, .95vw, 13px);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+      margin-bottom: .5em;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .card-value {
+      font-size: clamp(20px, 2vw, 28px);
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: .2em;
+    }
+
+    .card-sub { font-size: clamp(10px, .8vw, 12px); color: var(--muted); margin-bottom: .4em; }
+
+    .badge {
+      display: inline-block;
+      padding: .15em .5em;
+      border-radius: 999px;
+      font-size: clamp(9px, .65vw, 10px);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-green   { background: rgba(34,197,94,.18);  color: var(--green); }
+    .badge-amber   { background: rgba(245,158,11,.18); color: var(--amber); }
+    .badge-red     { background: rgba(239,68,68,.18);  color: var(--red); }
+    .badge-gray    { background: rgba(148,163,184,.15); color: var(--muted); }
+    .badge-blue    { background: rgba(59,130,246,.18); color: var(--blue); }
+
+    .soc-green { color: var(--green); }
+    .soc-amber { color: var(--amber); }
+    .soc-red   { color: var(--red);   }
+
+    .miner-buttons { display: flex; gap: .4em; margin-top: .6em; }
+    .miner-buttons button { flex: 1; padding: .35em .5em; font-size: clamp(10px, .75vw, 12px); }
+
+    /* ── Info row (sats + btc price + weather) ── */
+    /* Same 7-col grid as power-grid so cards align perfectly */
+    .info-row {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: clamp(8px, 1vw, 14px);
+      align-items: stretch;
+    }
+    .sats-card {
+      min-width: 0;
+    }
+    /* Weather card: icon+meta on left, hourly scroll on right — single row height */
+    .wx-card {
+      grid-column: span 3;
+      min-width: 0;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: clamp(10px, 1.2vw, 18px);
+    }
+    .wx-current {
+      display: flex;
+      align-items: center;
+      gap: .7em;
+      flex-shrink: 0;
+      min-width: clamp(110px, 12vw, 155px);
+      border-right: 1px solid var(--border);
+      padding-right: clamp(10px, 1.2vw, 16px);
+    }
+    .wx-icon-big { font-size: clamp(24px, 2.8vw, 36px); line-height: 1; }
+    .wx-meta { display: flex; flex-direction: column; gap: 1px; }
+    .wx-desc-text { font-size: clamp(11px, 1vw, 13px); font-weight: 600; }
+
+    /* ── Hourly forecast ── */
+    .hourly-scroll {
+      display: flex;
+      gap: clamp(5px, .6vw, 8px);
+      overflow-x: hidden;
+      padding-bottom: 2px;
+      flex: 1;
+      align-items: center;
+    }
+    .hourly-scroll::-webkit-scrollbar { height: 3px; }
+    .hourly-scroll::-webkit-scrollbar-track { background: var(--bg); }
+    .hourly-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .hour-card {
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: clamp(5px, .55vw, 8px) clamp(6px, .65vw, 10px);
+      min-width: clamp(52px, 5vw, 70px);
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .hour-card .time  { font-size: clamp(9px, .6vw, 10px); color: var(--muted); margin-bottom: 2px; }
+    .hour-card .emoji { font-size: clamp(13px, 1.3vw, 18px); margin-bottom: 2px; }
+    .hour-card .temp  { font-size: clamp(10px, .75vw, 12px); font-weight: 600; }
+    .hour-card .rad   { font-size: clamp(8px, .6vw, 10px); color: var(--muted); margin-top: 1px; }
+
+    /* ── Charts row ── */
+    .charts-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: clamp(8px, 1vw, 14px);
+      flex: 1;
+      min-height: 0;
+    }
+    .chart-card {
+      padding: clamp(10px, 1.1vw, 16px);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .chart-card h3 { font-size: clamp(10px, .8vw, 12px); color: var(--muted); font-weight: 600; flex-shrink: 0; }
+    .chart-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; margin-bottom: .7em; }
+    .time-btns { display: flex; gap: 3px; }
+    .time-btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 4px; padding: 1px 7px; font-size: 10px; cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .time-btn:hover { border-color: var(--muted); color: var(--text); }
+    .time-btn.active { background: var(--amber); border-color: var(--amber); color: #000; font-weight: 600; }
+    .chart-wrap { position: relative; flex: 1; min-height: 180px; }
+
+    /* ── Error banner ── */
+    .error-banner {
+      background: rgba(239,68,68,.12);
+      border: 1px solid rgba(239,68,68,.35);
+      border-radius: 8px;
+      padding: 8px 14px;
+      color: var(--red);
+      font-size: 12px;
+      display: none;
+    }
+    .error-banner.visible { display: block; }
+
+    /* ── Settings modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.65);
+      z-index: 1000;
+      padding: 24px;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 680px;
+      max-height: calc(100vh - 48px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .modal-header h2 { font-size: 16px; font-weight: 700; }
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 18px;
+      padding: 4px 8px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .modal-close:hover { color: var(--text); background: rgba(255,255,255,.07); }
+
+    .modal-body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Sidebar nav */
+    .settings-sidebar {
+      width: 156px;
+      flex-shrink: 0;
+      background: rgba(0,0,0,.18);
+      border-right: 1px solid var(--border);
+      padding: 10px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow-y: auto;
+    }
+    .settings-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      text-align: left;
+      width: 100%;
+      border-radius: 0;
+      transition: background .1s, color .1s;
+      white-space: nowrap;
+    }
+    .settings-nav-item:hover { background: rgba(255,255,255,.05); color: var(--text); opacity:1; }
+    .settings-nav-item.active { background: rgba(245,158,11,.13); color: var(--amber); font-weight: 600; }
+    .settings-nav-item .nav-icon { font-size: 15px; flex-shrink: 0; }
+
+    /* Panel content */
+    .settings-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 22px;
+    }
+    .settings-panel { display: none; }
+    .settings-panel.active { display: block; }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--amber);
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .form-group { margin-bottom: 13px; }
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .form-hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 3px;
+      opacity: .75;
+    }
+    .form-group input[type="text"],
+    .form-group input[type="password"],
+    .form-group input[type="number"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .form-group input:focus { border-color: var(--amber); }
+    .pwd-wrap { position: relative; display: flex; align-items: center; }
+    .pwd-wrap input { flex: 1; }
+    .pwd-toggle {
+      position: absolute; right: 8px;
+      background: none; border: none; padding: 0;
+      cursor: pointer; color: var(--muted); line-height: 1;
+      font-size: 15px; opacity: .7;
+    }
+    .pwd-toggle:hover { opacity: 1; }
+    .form-group input[readonly] { color: var(--muted); cursor: default; }
+
+    .form-group-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .form-group-row .form-group { flex: 1; margin-bottom: 0; }
+
+    .form-two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .checkbox-group input[type="checkbox"] {
+      width: 16px; height: 16px;
+      accent-color: var(--amber);
+      flex-shrink: 0;
+    }
+    .checkbox-group label { font-size: 13px; color: var(--text); cursor: pointer; }
+
+    .modal-footer {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      padding: 14px 20px;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* ── Mobile settings modal ── */
+    @media (max-width: 640px) {
+      .modal-overlay { padding: 0; }
+      .modal-card {
+        border-radius: 0;
+        max-height: 100dvh;
+        height: 100dvh;
+      }
+      .modal-body { flex-direction: column; }
+      .settings-sidebar {
+        width: 100%;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        padding: 0;
+        gap: 0;
+      }
+      .settings-sidebar::-webkit-scrollbar { height: 3px; }
+      .settings-nav-item {
+        flex-direction: column;
+        gap: 3px;
+        padding: 8px 12px;
+        font-size: 10px;
+        white-space: nowrap;
+        flex-shrink: 0;
+        border-radius: 0;
+      }
+      .settings-nav-item .nav-icon { font-size: 18px; }
+    }
+
+    /* ── Mobile / small screen ── */
+    @media (max-width: 640px) {
+      header { padding: 10px 14px; }
+      header h1 { font-size: 16px; }
+      main { padding: 10px 12px; gap: 10px; }
+
+      /* Power grid: 2-column on mobile */
+      .power-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      /* Info row: stack vertically */
+      .info-row {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .wx-card {
+        grid-column: 1 / -1;
+        flex-direction: column;
+      }
+      .wx-current {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        padding-right: 0;
+        padding-bottom: 10px;
+        margin-bottom: 4px;
+      }
+
+      /* Hourly cards slightly smaller */
+      .hour-card {
+        min-width: 58px;
+        padding: 5px 7px;
+      }
+
+      /* Charts stack */
+      .charts-row {
+        grid-template-columns: 1fr;
+      }
+
+      .card-value { font-size: 22px; }
+    }
+
+    /* Very small (iPhone SE) */
+    @media (max-width: 360px) {
+      .power-grid { grid-template-columns: repeat(2, 1fr); }
+      .card-label { font-size: 9px; }
+      .card-value { font-size: 18px; }
+      .card { padding: 9px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <h1>⚡ Solar Miner</h1>
+  <div class="header-right">
+    <div class="status-info">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="last-updated">Loading…</span>
+    </div>
+    <button class="btn-settings" onclick="openSettings()">⚙ Settings</button>
+  </div>
+</header>
+
+<main>
+  <!-- Error banner -->
+  <div class="error-banner" id="error-banner"></div>
+
+  <!-- Row 1: Power stats + Miner + Smart Start -->
+  <div class="power-grid">
+
+    <div class="card">
+      <div class="card-label" style="color:#f59e0b;">🔋 Battery</div>
+      <div class="card-value soc-green" id="soc-value">—</div>
+      <div class="card-sub" id="batt-power">—</div>
+      <span class="badge badge-gray" id="batt-badge">—</span>
+    </div>
+
+    <div class="card">
+      <div class="card-label" style="color:#22c55e;">☀️ PV Input</div>
+      <div class="card-value" id="input-power">—</div>
+      <div style="margin-top:8px;height:5px;border-radius:99px;background:rgba(255,255,255,0.08);overflow:hidden;">
+        <div id="pv-bar" style="height:100%;width:0%;border-radius:99px;transition:width .6s ease,background .6s ease;background:#22c55e;"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label" style="color:#60a5fa;">⚡ Grid</div>
+      <div class="card-value" id="grid-power">—</div>
+      <span class="badge badge-gray" id="grid-badge">—</span>
+    </div>
+
+    <div class="card">
+      <div class="card-label" style="color:#f43f5e;">🏠 Load</div>
+      <div class="card-value" id="load-power">—</div>
+    </div>
+
+    <div class="card">
+      <div class="card-label" style="color:#a78bfa;">⛏ Miner</div>
+      <div class="card-value" id="backup-power">—</div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">🎛 Mining Control</div>
+      <div class="card-value" id="miner-state" style="font-size:26px;">—</div>
+      <div class="card-sub" id="miner-threshold">SOC ON: —</div>
+      <div class="miner-buttons">
+        <button class="btn-green" onclick="minerStart()">▶ Start</button>
+        <button class="btn-red"   onclick="minerStop()">■ Stop</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">🧠 Smart</div>
+      <span class="badge badge-gray" id="smart-badge">Idle</span>
+      <div class="card-sub" style="margin-top:8px;" id="smart-sunny">—</div>
+      <div class="card-sub" id="smart-threshold">SOC ON: —</div>
+      <div class="card-sub" id="eod-projection" style="display:none;margin-top:4px;font-size:11px;"></div>
+    </div>
+
+  </div>
+
+  <!-- Row 2: Sats + Weather + Hourly -->
+  <div class="info-row">
+
+    <div class="card sats-card">
+      <div class="card-label">⛏ Sats (Today)</div>
+      <div class="card-value" id="pool-sats-today" style="font-size:20px;">—</div>
+      <div class="card-sub" id="pool-today-usd" style="color:var(--green);margin-bottom:4px;">—</div>
+      <div class="card-sub" id="pool-hashrate" style="font-size:11px;"></div>
+    </div>
+
+    <div class="card sats-card">
+      <div class="card-label">💰 Unpaid</div>
+      <div class="card-value" id="pool-sats-unpaid" style="font-size:20px;">—</div>
+      <div class="card-sub" id="pool-unpaid-usd" style="color:var(--green);margin-bottom:4px;">—</div>
+      <div class="card-sub" id="pool-shares" style="font-size:11px;"></div>
+    </div>
+
+    <div class="card sats-card">
+      <div class="card-label">₿ BTC Price</div>
+      <div class="card-value" id="btc-price" style="font-size:20px;">—</div>
+      <div class="card-sub" id="btc-price-sub" style="font-size:11px;">mempool.space</div>
+    </div>
+
+    <div class="card wx-card">
+      <!-- Current conditions on left, hourly scroll on right -->
+      <div class="wx-current">
+        <div class="wx-icon-big" id="wx-icon">—</div>
+        <div class="wx-meta">
+          <div class="wx-desc-text" id="wx-desc">—</div>
+          <div class="card-sub" style="margin:0;" id="wx-temp">—</div>
+          <div class="card-sub" style="margin:0;" id="wx-radiation">—</div>
+        </div>
+      </div>
+      <div class="hourly-scroll" id="hourly-row">
+        <div style="color:var(--muted);font-size:12px;padding:4px;">Configure location in Settings for forecast.</div>
+      </div>
+    </div>
+
+    <!-- Dehumidifier (combined) -->
+    <div class="card">
+      <div class="card-label">💧 Dehumid</div>
+      <div style="display:flex;gap:5px;margin-top:3px;flex-wrap:wrap;">
+        <span class="badge badge-gray" id="dehum-badge">—</span>
+        <span class="badge badge-green" id="dehum-auto-badge" style="display:none;">Auto</span>
+      </div>
+      <div class="card-value" id="dehum-humidity" style="font-size:clamp(18px,2vw,26px);margin-top:4px;">—</div>
+      <div class="card-sub" id="dehum-tank" style="display:none;color:var(--red);">⚠ Tank Full</div>
+      <div class="card-sub" id="dehum-error" style="display:none;color:var(--muted);font-size:10px;"></div>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <button class="btn-amber" id="dehum-on-btn" onclick="dehum(true)" style="flex:1;padding:.35em 0;font-size:.8em;">ON</button>
+        <button class="btn-secondary" id="dehum-off-btn" onclick="dehum(false)" style="flex:1;padding:.35em 0;font-size:.8em;">OFF</button>
+      </div>
+      <div style="display:flex;gap:4px;margin-top:8px;">
+        <div id="dehum-pip-0" style="flex:1;height:5px;border-radius:99px;background:var(--muted);opacity:.3;"></div>
+        <div id="dehum-pip-1" style="flex:1;height:5px;border-radius:99px;background:var(--muted);opacity:.3;"></div>
+        <div id="dehum-pip-2" style="flex:1;height:5px;border-radius:99px;background:var(--muted);opacity:.3;"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Row 3: SOC + Hashrate charts -->
+  <div class="charts-row">
+    <div class="card chart-card">
+      <div class="chart-header">
+        <h3 id="soc-chart-title">SOC &amp; Power (12h)</h3>
+        <div class="time-btns">
+          <button class="time-btn" data-hours="2">2h</button>
+          <button class="time-btn active" data-hours="12">12h</button>
+          <button class="time-btn" data-hours="24">24h</button>
+          <button class="time-btn" data-hours="168">7d</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="socChart"></canvas></div>
+    </div>
+    <div class="card chart-card">
+      <h3>Daily Earnings (7d)</h3>
+      <div class="chart-wrap"><canvas id="dailySatsChart"></canvas></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal-card">
+
+    <div class="modal-header">
+      <h2>⚙ Settings</h2>
+      <button class="modal-close" onclick="closeSettings()">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <!-- Sidebar nav -->
+      <nav class="settings-sidebar">
+        <button class="settings-nav-item active" onclick="showPanel('solis',this)">
+          <span class="nav-icon">☀️</span> Solis Cloud
+        </button>
+        <button class="settings-nav-item" onclick="showPanel('miner',this)">
+          <span class="nav-icon">⛏</span> Miner
+        </button>
+        <button class="settings-nav-item" onclick="showPanel('system',this)">
+          <span class="nav-icon">🔋</span> Solar System
+        </button>
+        <button class="settings-nav-item" onclick="showPanel('control',this)">
+          <span class="nav-icon">🎛</span> Control
+        </button>
+        <button class="settings-nav-item" onclick="showPanel('smart',this)">
+          <span class="nav-icon">🧠</span> Smart Start
+        </button>
+        <button class="settings-nav-item" onclick="showPanel('location',this)">
+          <span class="nav-icon">📍</span> Location
+        </button>
+        <button class="settings-nav-item" onclick="showPanel('pool',this)">
+          <span class="nav-icon">🏊</span> Pool
+        </button>
+        <button class="settings-nav-item" onclick="showPanel('dehum',this)">
+          <span class="nav-icon">💧</span> Dehum
+        </button>
+        <button class="settings-nav-item" onclick="showPanel('alerts',this)">
+          <span class="nav-icon">📡</span> Alerts
+        </button>
+      </nav>
+
+      <!-- Panel content -->
+      <div class="settings-content">
+
+        <!-- Solis Cloud -->
+        <div class="settings-panel active" id="panel-solis">
+          <div class="panel-title">Solis Cloud API</div>
+          <div class="form-group">
+            <label>API Key</label>
+            <input type="text" id="s-solis_api_key" placeholder="Your Solis API key" />
+          </div>
+          <div class="form-group">
+            <label>API Secret</label>
+            <div class="pwd-wrap">
+              <input type="password" id="s-solis_api_secret" placeholder="Your Solis API secret" autocomplete="new-password" />
+              <button type="button" class="pwd-toggle" onclick="togglePwd('s-solis_api_secret',this)" tabindex="-1">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Inverter Serial Number</label>
+            <input type="text" id="s-solis_inverter_sn" placeholder="Inverter SN" />
+            <div class="form-hint">Found in the Solis app under Device Info.</div>
+          </div>
+        </div>
+
+        <!-- Miner -->
+        <div class="settings-panel" id="panel-miner">
+          <div class="panel-title">Miner</div>
+          <div class="form-group">
+            <label>Miner IP Address</label>
+            <input type="text" id="s-miner_ip" placeholder="e.g. 192.168.1.50" />
+            <div class="form-hint">Local IP of your LuxOS miner.</div>
+          </div>
+          <div class="form-group">
+            <label>Miner Power Draw (W)</label>
+            <input type="number" id="s-miner_power_w" step="10" min="0" placeholder="e.g. 3450" />
+            <div class="form-hint">Used to estimate whether PV output can offset mining load.</div>
+          </div>
+        </div>
+
+        <!-- Solar System -->
+        <div class="settings-panel" id="panel-system">
+          <div class="panel-title">Solar System</div>
+          <div class="form-group">
+            <label>Battery Capacity (kWh)</label>
+            <input type="number" id="s-battery_capacity_kwh" step="0.1" min="0" placeholder="e.g. 10.0" />
+            <div class="form-hint">Total usable battery capacity — used to estimate charge time.</div>
+          </div>
+          <div class="form-group">
+            <label>PV Peak Power (kW)</label>
+            <input type="number" id="s-pv_peak_kw" step="0.1" min="0" placeholder="e.g. 6.5" />
+            <div class="form-hint">Maximum output of your solar panels at full sun. Used to calculate solar efficiency % and project available power.</div>
+          </div>
+          <div class="form-group">
+            <label>Learned Efficiency Data</label>
+            <button type="button" id="btn-reset-eff" class="btn-secondary" style="padding:.35em .9em;font-size:.8em;">Reset</button>
+            <div class="form-hint">Clear per-hour efficiency data so it relearns from scratch. Do this after correcting PV Peak Power.</div>
+          </div>
+          <div class="form-group">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <label style="margin:0;">Efficiency by Month</label>
+              <select id="eff-month-select" style="font-size:12px;padding:2px 6px;">
+                <option value="1">January</option>
+                <option value="2">February</option>
+                <option value="3">March</option>
+                <option value="4">April</option>
+                <option value="5">May</option>
+                <option value="6">June</option>
+                <option value="7">July</option>
+                <option value="8">August</option>
+                <option value="9">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
+            </div>
+            <div style="position:relative;height:180px;">
+              <canvas id="eff-chart"></canvas>
+            </div>
+            <div id="eff-chart-empty" style="display:none;color:var(--muted);font-size:11px;margin-top:6px;">No efficiency data yet for this month — will populate after a few sunny days.</div>
+            <div class="form-hint" style="margin-top:6px;">
+              Each bar = avg actual output ÷ theoretical max for that hour. Green = this month's data (≥3 samples), yellow = borrowed from nearest month.
+            </div>
+          </div>
+        </div>
+
+        <!-- Control -->
+        <div class="settings-panel" id="panel-control">
+          <div class="panel-title">Basic Control</div>
+          <div class="form-two-col">
+            <div class="form-group">
+              <label>SOC to Start Mining (%)</label>
+              <input type="number" id="s-soc_on_threshold" step="0.5" min="0" max="100" />
+              <div class="form-hint">Miner turns ON when SOC rises above this.</div>
+            </div>
+            <div class="form-group">
+              <label>SOC to Stop Mining (%)</label>
+              <input type="number" id="s-soc_off_threshold" step="0.5" min="0" max="100" />
+              <div class="form-hint">Miner turns OFF when SOC falls below this. Set lower than Start to add a buffer against cloud cycling.</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Poll Interval (seconds)</label>
+            <input type="number" id="s-poll_interval_seconds" step="1" min="10" />
+            <div class="form-hint">How often to check the inverter and adjust the miner.</div>
+          </div>
+          <div class="panel-title" style="margin-top:18px;">Solis API Failsafe</div>
+          <div class="form-two-col">
+            <div class="form-group">
+              <label>Action when API is down</label>
+              <select id="s-api_fail_action" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px;outline:none;">
+                <option value="stop">Stop miner (safe)</option>
+                <option value="keep">Keep current state</option>
+                <option value="start">Keep miner running</option>
+              </select>
+              <div class="form-hint">What to do when Solis cloud is unreachable.</div>
+            </div>
+            <div class="form-group">
+              <label>Trigger after N failures</label>
+              <input type="number" id="s-api_fail_cycles" step="1" min="1" max="20" />
+              <div class="form-hint">Consecutive failed polls before action.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Smart Start -->
+        <div class="settings-panel" id="panel-smart">
+          <div class="panel-title">Smart Start</div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-smart_start_enabled" />
+            <label for="s-smart_start_enabled">Enable Smart Start — lower SOC threshold on sunny days</label>
+          </div>
+          <div class="form-two-col">
+            <div class="form-group">
+              <label>Smart SOC ON (%)</label>
+              <input type="number" id="s-smart_soc_on_threshold" step="0.5" min="0" max="100" />
+              <div class="form-hint">Start early at this SOC on sunny days.</div>
+            </div>
+            <div class="form-group">
+              <label>Smart SOC OFF (%)</label>
+              <input type="number" id="s-smart_soc_off_threshold" step="0.5" min="0" max="100" />
+              <div class="form-hint">Stop at this SOC on sunny days.</div>
+            </div>
+          </div>
+          <div class="form-two-col">
+            <div class="form-group">
+              <label>Min Sunny Hours to Activate</label>
+              <input type="number" id="s-sunny_hours_threshold" step="0.5" min="0" />
+              <div class="form-hint">Remaining hours above radiation threshold today.</div>
+            </div>
+            <div class="form-group">
+              <label>Radiation Threshold (W/m²)</label>
+              <input type="number" id="s-radiation_threshold_wm2" step="10" min="0" />
+              <div class="form-hint">Counts as a "sunny hour" above this level.</div>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top:.5em;">
+            <label style="display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="s-eod_soc_target_enabled" onchange="el('s-eod_soc_target').disabled=!this.checked" />
+              Enable End-of-Day Battery Target
+            </label>
+            <div class="form-hint">When enabled, Smart Start will shut the miner off early if running it would cause the battery to fall below the target SOC at sunset. Enable only after a few days of load data has accumulated.</div>
+          </div>
+          <div class="form-group">
+            <label>End-of-Day SOC Target (%)</label>
+            <input type="number" id="s-eod_soc_target" step="1" min="0" max="100" placeholder="e.g. 80" />
+            <div class="form-hint">Target battery % to reach by end of solar generation each day.</div>
+          </div>
+        </div>
+
+        <!-- Location -->
+        <div class="settings-panel" id="panel-location">
+          <div class="panel-title">Location &amp; Weather</div>
+          <div class="form-group-row">
+            <div class="form-group">
+              <label>ZIP Code</label>
+              <input type="text" id="s-location_name" placeholder="e.g. 85001" maxlength="5" />
+            </div>
+            <button class="btn-amber" onclick="searchLocation()" style="margin-bottom:0;white-space:nowrap;padding:7px 14px;">Search</button>
+          </div>
+          <div class="form-hint" style="margin-top:6px;margin-bottom:12px;">Enter your 5-digit US ZIP code and click Search to set coordinates.</div>
+          <div class="form-two-col">
+            <div class="form-group">
+              <label>Latitude (auto-filled)</label>
+              <input type="number" id="s-location_lat" step="0.0001" readonly />
+            </div>
+            <div class="form-group">
+              <label>Longitude (auto-filled)</label>
+              <input type="number" id="s-location_lon" step="0.0001" readonly />
+            </div>
+          </div>
+        </div>
+
+        <!-- Pool -->
+        <!-- Dehumidifier -->
+        <div class="settings-panel" id="panel-dehum">
+          <div class="panel-title">Dehumidifier (Tuya Local)</div>
+          <div class="form-hint" style="margin-bottom:1em;">
+            Requires a Tuya developer account to obtain the local key.
+            Pair the device in Smart Life, then run <code>python -m tinytuya wizard</code>
+            on any PC on the same network to discover your Device ID and Local Key.
+          </div>
+          <div class="form-group">
+            <label>Device ID</label>
+            <input type="text" id="s-dehum_device_id" placeholder="e.g. bfabcd1234567890" />
+          </div>
+          <div class="form-group">
+            <label>Device IP</label>
+            <input type="text" id="s-dehum_ip" placeholder="e.g. 192.168.1.50" />
+            <div class="form-hint">Assign a static IP to the dehumidifier in your router.</div>
+          </div>
+          <div class="form-group">
+            <label>Local Key</label>
+            <div class="pwd-wrap">
+              <input type="password" id="s-dehum_local_key" placeholder="16-character local key" autocomplete="new-password" />
+              <button type="button" class="pwd-toggle" onclick="togglePwd('s-dehum_local_key',this)" tabindex="-1">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Tuya Protocol Version</label>
+            <input type="number" id="s-dehum_version" step="0.1" min="3.1" max="3.5" placeholder="3.3" />
+            <div class="form-hint">Usually 3.3 for modern devices. Try 3.4 or 3.5 if 3.3 fails.</div>
+          </div>
+          <div class="form-group" style="margin-top:.5em;">
+            <label style="display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="s-dehum_auto_enabled" />
+              Enable Auto Mode (run on excess solar)
+            </label>
+          </div>
+          <div class="form-group">
+            <label>Excess Power Threshold (W)</label>
+            <input type="number" id="s-dehum_excess_threshold_w" step="50" min="0" placeholder="500" />
+            <div class="form-hint">Turn dehumidifier ON when grid export exceeds this. Turns OFF when export drops 200W below threshold.</div>
+          </div>
+          <div class="form-group">
+            <label>Minimum Run Time (minutes)</label>
+            <input type="number" id="s-dehum_min_run_minutes" step="1" min="0" placeholder="30" />
+            <div class="form-hint">Once auto turns ON, won't turn it back OFF for at least this long. Prevents short-cycling on passing clouds.</div>
+          </div>
+          <div class="form-group">
+            <label>Minimum Off Time (minutes)</label>
+            <input type="number" id="s-dehum_min_off_minutes" step="1" min="0" placeholder="15" />
+            <div class="form-hint">Once auto turns OFF, won't turn it back ON for at least this long.</div>
+          </div>
+          <div class="form-group">
+            <label>Manual Override Duration (hours)</label>
+            <input type="number" id="s-dehum_manual_override_hours" step="0.5" min="0" placeholder="2" />
+            <div class="form-hint">Pressing ON/OFF manually suspends auto mode for this many hours, then auto resumes.</div>
+          </div>
+        </div>
+
+        <div class="settings-panel" id="panel-pool">
+          <div class="panel-title">Lux Mining Pool</div>
+          <div class="form-group">
+            <label>API Key</label>
+            <div class="pwd-wrap">
+              <input type="password" id="s-lux_pool_api_key" placeholder="Your Luxor API key" autocomplete="new-password" />
+              <button type="button" class="pwd-toggle" onclick="togglePwd('s-lux_pool_api_key',this)" tabindex="-1">👁</button>
+            </div>
+            <div class="form-hint">Generate in Luxor dashboard → Account → API Keys.</div>
+          </div>
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="s-lux_pool_username" placeholder="Your Luxor username" />
+            <div class="form-hint">Your Luxor account username (not email).</div>
+          </div>
+          <div class="form-group">
+            <label>API Endpoint URL <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
+            <input type="text" id="s-lux_pool_api_url" placeholder="https://api.beta.luxor.tech/graphql" />
+            <div class="form-hint">Leave blank to auto-detect. If pool stats aren't loading, find the correct URL in your browser DevTools (Network tab → filter "graphql") while logged into Luxor.</div>
+          </div>
+          <div style="margin-top:14px;">
+            <div id="pool-test-result" style="font-size:12px;color:var(--muted);margin-bottom:8px;"></div>
+          </div>
+        </div>
+
+        <!-- Alerts -->
+        <div class="settings-panel" id="panel-alerts">
+          <div class="panel-title">Telegram Bot</div>
+          <div class="form-group">
+            <label>Bot Token</label>
+            <div class="pwd-wrap">
+              <input type="password" id="s-telegram_bot_token" placeholder="123456:ABC-DEF..." autocomplete="new-password" />
+              <button type="button" class="pwd-toggle" onclick="togglePwd('s-telegram_bot_token',this)" tabindex="-1">👁</button>
+            </div>
+            <div class="form-hint">Create a bot via @BotFather on Telegram and paste the token here.</div>
+          </div>
+          <div class="form-group">
+            <label>Chat ID</label>
+            <input type="text" id="s-telegram_chat_id" placeholder="Your chat or group ID" />
+            <div class="form-hint">Message @userinfobot on Telegram to get your chat ID. For groups, add the bot and get the group ID.</div>
+          </div>
+          <div style="margin-bottom:14px;">
+            <button class="btn-amber" onclick="testTelegram()" style="font-size:12px;padding:6px 12px;">Send Test Message</button>
+            <span id="tg-test-result" style="font-size:12px;color:var(--muted);margin-left:10px;"></span>
+          </div>
+
+          <div class="panel-title" style="margin-top:4px;">Notify me when…</div>
+
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_miner_onoff" />
+            <label for="s-tg_miner_onoff">⛏ Miner starts or stops</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_smart_start" />
+            <label for="s-tg_smart_start">🧠 Smart Start activates / deactivates</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_api_failure" />
+            <label for="s-tg_api_failure">⚠️ Solis API goes down (and recovers)</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_soc_low" />
+            <label for="s-tg_soc_low">🔋 Battery drops below low-SOC threshold</label>
+          </div>
+          <div class="form-group" style="margin-left:24px;margin-top:-6px;">
+            <label>Low SOC alert threshold (%)</label>
+            <input type="number" id="s-tg_soc_low_pct" step="1" min="0" max="100" style="max-width:100px;" />
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_soc_full" />
+            <label for="s-tg_soc_full">🌞 Battery reaches 100%</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_hashrate_drop" />
+            <label for="s-tg_hashrate_drop">📉 Hashrate drops significantly (possible throttling)</label>
+          </div>
+          <div class="form-group" style="margin-left:24px;margin-top:-6px;">
+            <label>Trigger if hashrate drops by (%)</label>
+            <input type="number" id="s-tg_hashrate_drop_pct" step="1" min="5" max="100" style="max-width:100px;" />
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_sats_milestone" />
+            <label for="s-tg_sats_milestone">💰 Sats milestone reached today</label>
+          </div>
+          <div class="form-group" style="margin-left:24px;margin-top:-6px;">
+            <label>Milestone every (sats)</label>
+            <input type="number" id="s-tg_sats_milestone_amount" step="100" min="100" style="max-width:120px;" />
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_daily_summary" />
+            <label for="s-tg_daily_summary">📊 Daily mining summary</label>
+          </div>
+          <div class="form-group" style="margin-left:24px;margin-top:-6px;">
+            <label>Send summary at hour (0–23, your local time)</label>
+            <input type="number" id="s-tg_daily_hour" step="1" min="0" max="23" style="max-width:80px;" />
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_sunny_day_ahead" />
+            <label for="s-tg_sunny_day_ahead">☀️ Sunny day ahead — Smart Start will activate</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_weekly_recap" />
+            <label for="s-tg_weekly_recap">📅 Weekly sats recap</label>
+          </div>
+          <div class="form-group" style="margin-left:24px;margin-top:-6px;display:flex;gap:12px;flex-wrap:wrap;">
+            <div>
+              <label>Day</label>
+              <select id="s-tg_weekly_recap_day" style="margin-top:4px;">
+                <option value="0">Monday</option>
+                <option value="1">Tuesday</option>
+                <option value="2">Wednesday</option>
+                <option value="3">Thursday</option>
+                <option value="4">Friday</option>
+                <option value="5">Saturday</option>
+                <option value="6">Sunday</option>
+              </select>
+            </div>
+            <div>
+              <label>Hour (0–23)</label>
+              <input type="number" id="s-tg_weekly_recap_hour" step="1" min="0" max="23" style="max-width:80px;margin-top:4px;" />
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /settings-content -->
+    </div><!-- /modal-body -->
+
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeSettings()">Cancel</button>
+      <button class="btn-amber" onclick="saveSettings()">Save</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ── Helpers ──────────────────────────────────────────────────
+  function fmt(w) {
+    if (w === null || w === undefined || isNaN(w)) return '—';
+    const abs = Math.abs(w);
+    if (abs >= 1000) return (w / 1000).toFixed(2) + ' kW';
+    return Math.round(w) + ' W';
+  }
+
+  function direction(w, posLabel, negLabel) {
+    if (w > 50)  return posLabel;
+    if (w < -50) return negLabel;
+    return 'idle';
+  }
+
+  function socColorClass(soc) {
+    if (soc > 60) return 'soc-green';
+    if (soc > 15) return 'soc-amber';
+    return 'soc-red';
+  }
+
+  function el(id) { return document.getElementById(id); }
+
+  let dehumThresholdW = 500;
+
+  function timeSince(isoStr) {
+    if (!isoStr) return '—';
+    const d = new Date(isoStr);
+    const sec = Math.round((Date.now() - d.getTime()) / 1000);
+    if (sec < 5)   return 'just now';
+    if (sec < 60)  return sec + 's ago';
+    if (sec < 3600) return Math.round(sec/60) + 'm ago';
+    return Math.round(sec/3600) + 'h ago';
+  }
+
+  function isFresh(isoStr) {
+    if (!isoStr) return false;
+    return (Date.now() - new Date(isoStr).getTime()) < 120000;
+  }
+
+  function fmtHashrate(mhs) {
+    if (!mhs || mhs <= 0) return '—';
+    if (mhs >= 1e6) return (mhs / 1e6).toFixed(1) + ' TH/s';
+    if (mhs >= 1e3) return (mhs / 1e3).toFixed(1) + ' GH/s';
+    return Math.round(mhs) + ' MH/s';
+  }
+
+  // ── SOC + Power Chart ────────────────────────────────────────
+  let socChart = null;
+  let hashrateChart = null;
+  let effChart = null;
+  let historyHours = 12;
+
+  function setHistoryWindow(hours) {
+    historyHours = hours;
+    document.querySelectorAll('.time-btn').forEach(b =>
+      b.classList.toggle('active', Number(b.dataset.hours) === hours)
+    );
+    const label = hours === 168 ? '7d' : hours + 'h';
+    el('soc-chart-title').textContent = `SOC & Power (${label})`;
+    const hrTitle = el('hr-chart-title');
+    if (hrTitle) hrTitle.textContent = `Hashrate (${label})`;
+    if (socChart) { socChart.destroy(); socChart = null; }
+    loadHistory();
+  }
+
+  document.querySelectorAll('.time-btn').forEach(b =>
+    b.addEventListener('click', () => setHistoryWindow(Number(b.dataset.hours)))
+  );
+
+  async function loadHistory() {
+    try {
+      const resp = await fetch(`/api/history?hours=${historyHours}`);
+      if (!resp.ok) return;
+      const rows = await resp.json();
+
+      const labels    = rows.map(r => {
+        const d = new Date(r.ts);
+        if (historyHours > 24)
+          return d.toLocaleDateString([], {weekday:'short'}) + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      });
+      const socVals   = rows.map(r => r.soc);
+      const pvVals    = rows.map(r => (r.input_power_w  || 0) / 1000);
+      const gridVals  = rows.map(r => (r.grid_power_w   || 0) / 1000);
+      const loadVals  = rows.map(r => (r.load_power_w   || 0) / 1000);
+      const minerVals = rows.map(r => (r.backup_power_w || 0) / 1000);
+      const bgColors  = rows.map(r => r.miner_running ? 'rgba(34,197,94,0.7)' : 'rgba(245,158,11,0.6)');
+
+      if (!socChart) {
+        const ctx = el('socChart').getContext('2d');
+        socChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: 'SOC %',
+                data: socVals,
+                borderColor: '#f59e0b',
+                backgroundColor: 'rgba(245,158,11,0.08)',
+                borderWidth: 2,
+                pointRadius: 1,
+                pointBackgroundColor: bgColors,
+                pointBorderColor: bgColors,
+                tension: 0.4,
+                cubicInterpolationMode: 'monotone',
+                fill: true,
+                yAxisID: 'y',
+              },
+              {
+                label: 'PV kW',
+                data: pvVals,
+                borderColor: '#2dd4bf',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0.4,
+                cubicInterpolationMode: 'monotone',
+                yAxisID: 'y1',
+              },
+              {
+                label: 'Grid kW',
+                data: gridVals,
+                borderColor: '#60a5fa',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0.4,
+                cubicInterpolationMode: 'monotone',
+                yAxisID: 'y1',
+              },
+              {
+                label: 'Load kW',
+                data: loadVals,
+                borderColor: '#f43f5e',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0.4,
+                cubicInterpolationMode: 'monotone',
+                yAxisID: 'y1',
+              },
+              {
+                label: 'Miner kW',
+                data: minerVals,
+                borderColor: '#a78bfa',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0.4,
+                cubicInterpolationMode: 'monotone',
+                yAxisID: 'y1',
+              },
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+              x: {
+                ticks: { color: '#94a3b8', maxTicksLimit: 8 },
+                grid:  { color: '#2a2d3a' },
+              },
+              y: {
+                type: 'linear',
+                position: 'left',
+                min: 0, max: 100,
+                ticks: { color: '#f59e0b', callback: v => v + '%' },
+                grid:  { color: '#2a2d3a' },
+              },
+              y1: {
+                type: 'linear',
+                position: 'right',
+                ticks: { color: '#94a3b8', callback: v => v.toFixed(1) + ' kW' },
+                grid:  { drawOnChartArea: false },
+              },
+            },
+            plugins: {
+              legend: {
+                display: true,
+                labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } },
+              },
+              tooltip: {
+                callbacks: {
+                  label: c => {
+                    if (c.dataset.yAxisID === 'y') {
+                      const mining = rows[c.dataIndex]?.miner_running ? ' ⛏' : '';
+                      return `SOC: ${c.parsed.y.toFixed(1)}%${mining}`;
+                    }
+                    return `${c.dataset.label}: ${c.parsed.y.toFixed(2)} kW`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      } else {
+        socChart.data.labels = labels;
+        socChart.data.datasets[0].data = socVals;
+        socChart.data.datasets[0].pointBackgroundColor = bgColors;
+        socChart.data.datasets[0].pointBorderColor = bgColors;
+        socChart.data.datasets[1].data = pvVals;
+        socChart.data.datasets[2].data = gridVals;
+        socChart.data.datasets[3].data = loadVals;
+        socChart.data.datasets[4].data = minerVals;
+        socChart.update('none');
+      }
+    } catch(e) {
+      console.warn('loadHistory error:', e);
+    }
+  }
+
+  let dailySatsChart = null;
+
+  async function loadDailySats() {
+    try {
+      const resp = await fetch('/api/daily_sats?days=7');
+      if (!resp.ok) return;
+      const rows = await resp.json();
+      if (!rows.length) return;
+
+      const labels = rows.map(r => {
+        const d = new Date(r.date + 'T12:00:00');
+        return d.toLocaleDateString([], {weekday: 'short', month: 'numeric', day: 'numeric'});
+      });
+      const vals = rows.map(r => r.sats);
+
+      if (!dailySatsChart) {
+        const ctx = el('dailySatsChart').getContext('2d');
+        dailySatsChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Sats',
+              data: vals,
+              backgroundColor: 'rgba(245,158,11,0.7)',
+              borderColor: '#f59e0b',
+              borderWidth: 1,
+              borderRadius: 3,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { ticks: { color: '#94a3b8', font: { size: 10 } }, grid: { color: '#2a2d3a' } },
+              y: {
+                min: 0,
+                ticks: { color: '#94a3b8', callback: v => v.toLocaleString() },
+                grid: { color: '#2a2d3a' },
+              }
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: c => c.parsed.y.toLocaleString() + ' sats'
+                }
+              }
+            }
+          }
+        });
+      } else {
+        dailySatsChart.data.labels = labels;
+        dailySatsChart.data.datasets[0].data = vals;
+        dailySatsChart.update('none');
+      }
+    } catch(e) {
+      console.warn('loadDailySats error:', e);
+    }
+  }
+
+  // ── Main refresh ─────────────────────────────────────────────
+  async function refresh() {
+    try {
+      const resp = await fetch('/api/status');
+      if (!resp.ok) return;
+      const s = await resp.json();
+
+      // Status dot
+      const fresh = isFresh(s.last_updated);
+      el('status-dot').className = 'status-dot' + (fresh ? ' fresh' : '');
+      el('last-updated').textContent = 'Last updated: ' + timeSince(s.last_updated);
+
+      // Error banner
+      const banner = el('error-banner');
+      if (s.error) {
+        banner.textContent = '⚠ ' + s.error;
+        banner.classList.add('visible');
+      } else {
+        banner.classList.remove('visible');
+      }
+
+      const r = s.readings;
+      if (r) {
+        // SOC
+        const soc = r.soc;
+        const socEl = el('soc-value');
+        socEl.textContent = soc.toFixed(1) + '%';
+        socEl.className = 'card-value ' + socColorClass(soc);
+
+        // Battery direction
+        const bw = r.battery_power_w;
+        const battDir = direction(bw, 'charging', 'discharging');
+        el('batt-power').textContent = fmt(Math.abs(bw));
+        const battBadge = el('batt-badge');
+        battBadge.textContent = battDir;
+        battBadge.className = 'badge ' + (battDir === 'charging' ? 'badge-green' : battDir === 'discharging' ? 'badge-amber' : 'badge-gray');
+
+        // PV
+        el('input-power').textContent = fmt(r.input_power_w);
+        const pvPeakW = (s.pv_peak_kw || 0) * 1000;
+        const pvPct = pvPeakW > 0 ? Math.min(100, (r.input_power_w / pvPeakW) * 100) : 0;
+        const pvBar = el('pv-bar');
+        pvBar.style.width = pvPct.toFixed(1) + '%';
+        pvBar.style.background = pvPct >= 80 ? '#22c55e' : pvPct >= 40 ? '#f59e0b' : '#60a5fa';
+
+        // Grid
+        const gw = r.grid_power_w;
+        const gridDir = direction(gw, 'exporting', 'importing');
+        el('grid-power').textContent = fmt(Math.abs(gw));
+        const gridBadge = el('grid-badge');
+        gridBadge.textContent = gridDir;
+        gridBadge.className = 'badge ' + (gridDir === 'exporting' ? 'badge-red' : gridDir === 'importing' ? 'badge-amber' : 'badge-gray');
+
+        // Load & Backup
+        el('load-power').textContent = fmt(r.load_power_w);
+        el('backup-power').textContent = fmt(r.backup_power_w);
+      }
+
+      // Miner state
+      const mining = s.miner_running;
+      const mEl = el('miner-state');
+      if (mining === true) {
+        mEl.textContent = 'ON';
+        mEl.style.color = 'var(--green)';
+      } else if (mining === false) {
+        mEl.textContent = 'OFF';
+        mEl.style.color = 'var(--red)';
+      } else {
+        mEl.textContent = '?';
+        mEl.style.color = 'var(--muted)';
+      }
+      el('miner-threshold').textContent = 'SOC ON: ' + (s.effective_soc_on != null ? s.effective_soc_on.toFixed(1) + '%' : '—');
+
+      // Smart start
+      const smartBadge = el('smart-badge');
+      smartBadge.textContent = s.smart_start_active ? 'Active' : 'Idle';
+      smartBadge.className = 'badge ' + (s.smart_start_active ? 'badge-green' : 'badge-gray');
+      const wx = s.weather;
+      const sunny = wx ? wx.remaining_sunny_hours : null;
+      el('smart-sunny').textContent = 'Sunny hours remaining: ' + (sunny != null ? sunny : '—');
+      el('smart-threshold').textContent = 'Effective SOC ON: ' + (s.effective_soc_on != null ? s.effective_soc_on.toFixed(1) + '%' : '—');
+
+      const eodEl = el('eod-projection');
+      const eodTarget  = s.eod_soc_target || 0;
+      const eodEnabled = s.eod_soc_target_enabled;
+      const eodWith    = s.eod_projected_with;
+      const eodWithout = s.eod_projected_without;
+      if (eodEnabled && eodWith != null) {
+        const color = s.eod_protecting ? 'var(--amber)' : (eodWith >= eodTarget ? 'var(--green)' : 'var(--red)');
+        const label = s.eod_protecting ? '⚠ EOD protect active' : 'EOD est';
+        eodEl.style.display = '';
+        eodEl.style.color = color;
+        eodEl.innerHTML = `${label}: <b>${eodWith.toFixed(0)}%</b> w/ miner`;
+        if (eodWithout != null) eodEl.innerHTML += ` &nbsp;/&nbsp; <b>${eodWithout.toFixed(0)}%</b> w/o`;
+      } else {
+        eodEl.style.display = 'none';
+      }
+
+      // Dehumidifier
+      const dehumBadge  = el('dehum-badge');
+      const dehumErrEl  = el('dehum-error');
+      const dehumAutoB  = el('dehum-auto-badge');
+      if (s.dehum_power !== null && s.dehum_power !== undefined) {
+        dehumBadge.textContent = s.dehum_power ? 'Running' : 'Idle';
+        dehumBadge.className   = 'badge ' + (s.dehum_power ? 'badge-green' : 'badge-gray');
+        el('dehum-humidity').textContent = s.dehum_humidity != null ? s.dehum_humidity + '%' : '—';
+        el('dehum-tank').style.display = s.dehum_tank_full ? '' : 'none';
+        dehumAutoB.style.display = s.dehum_auto_on ? '' : 'none';
+        dehumAutoB.className = 'badge badge-green';
+        dehumErrEl.style.display = 'none';
+        el('dehum-on-btn').className  = s.dehum_power ? 'btn-amber'     : 'btn-secondary';
+        el('dehum-off-btn').className = s.dehum_power ? 'btn-secondary' : 'btn-amber';
+      } else if (s.dehum_error) {
+        dehumBadge.textContent = 'Error';
+        dehumBadge.className   = 'badge badge-red';
+        dehumErrEl.textContent = s.dehum_error;
+        dehumErrEl.style.display = '';
+        dehumAutoB.style.display = 'none';
+      } else {
+        dehumBadge.textContent = 'N/C';
+        dehumBadge.className   = 'badge badge-gray';
+        dehumAutoB.style.display = 'none';
+      }
+      const gridW = s.readings ? (s.readings.grid_power_w || 0) : 0;
+      const pipColors = ['#ef4444', '#f59e0b', '#22c55e'];
+      const pipActive = gridW >= dehumThresholdW ? 2 : gridW >= dehumThresholdW * 0.5 ? 1 : 0;
+      for (let i = 0; i < 3; i++) {
+        const pip = el('dehum-pip-' + i);
+        pip.style.background = i === pipActive ? pipColors[i] : 'var(--muted)';
+        pip.style.opacity    = i === pipActive ? '1' : '.3';
+      }
+
+      // Weather
+      if (wx) {
+        el('wx-icon').textContent      = wx.current_icon || '—';
+        el('wx-desc').textContent      = wx.current_desc || '—';
+        el('wx-temp').textContent      = wx.current_temp_f != null ? wx.current_temp_f.toFixed(1) + '°F' : '—';
+        const pvKw = s.pv_peak_kw || 0;
+        const effMap = s.pv_efficiency || {};
+        function estSolar(rad_w, hour) {
+          if (!pvKw) return `<span style="color:var(--red)">—</span>`;
+          const theoretical = pvKw * rad_w / 1000;
+          const eff = (hour != null && effMap[hour] != null && effMap[hour] > 0.05) ? effMap[hour] : null;
+          const kw = eff !== null ? theoretical * eff : theoretical;
+          const learned = eff !== null;
+          return kw.toFixed(1) + ' kW' + (learned ? '' : '*');
+        }
+        const curHour = new Date().getHours();
+        const curEst = wx.current_radiation_w != null ? estSolar(wx.current_radiation_w, curHour) : '—';
+        const curRadLabel = wx.current_radiation_w != null ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${Math.round(wx.current_radiation_w)} W/m²</div>` : '';
+        el('wx-radiation').innerHTML = curEst + curRadLabel;
+
+        // Hourly forecast
+        const row = el('hourly-row');
+        if (wx.hourly && wx.hourly.length) {
+          row.innerHTML = wx.hourly.slice(0, 5).map(h => {
+            const hour = h.time ? parseInt(h.time.split(':')[0]) : null;
+            return `<div class="hour-card">
+              <div class="time">${h.time}</div>
+              <div class="emoji">${h.icon}</div>
+              <div class="temp">${h.temp_f.toFixed(0)}°F</div>
+              <div class="rad">${estSolar(h.radiation_w, hour)}</div>
+              <div class="rad">${h.radiation_w != null ? Math.round(h.radiation_w) + ' W/m²' : ''}</div>
+            </div>`;
+          }).join('');
+        }
+      } else {
+        el('wx-icon').textContent = '—';
+        el('wx-desc').textContent = 'No data';
+        el('wx-temp').textContent = '';
+        el('wx-radiation').textContent = 'Configure location in Settings';
+      }
+
+      // BTC price card
+      const btcPrice = s.btc_price_usd || 0;
+      if (btcPrice) {
+        el('btc-price').textContent = '$' + btcPrice.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0});
+        el('btc-price-sub').textContent = 'per BTC';
+      } else {
+        el('btc-price').textContent = '—';
+        el('btc-price-sub').textContent = 'mempool.space';
+      }
+
+      // Pool cards
+      const pool = s.pool;
+      function satsToUsd(sats) {
+        if (!sats || !btcPrice) return btcPrice ? '$0.00' : '—';
+        const usd = (sats / 1e8) * btcPrice;
+        return usd < 0.01 ? '<$0.01' : '$' + usd.toFixed(2);
+      }
+      const todaySats = s.today_sats || 0;
+      el('pool-sats-today').textContent = todaySats.toLocaleString() + ' sats';
+      el('pool-today-usd').textContent  = satsToUsd(todaySats);
+
+      if (pool) {
+        const unpaid = pool.unpaid_sats || 0;
+
+        // Use 5m hashrate if non-zero, else fall back to 24h average
+        const hr5m  = pool.hashrate_ths || 0;
+        const hr24h = pool.hashrate_24h_ths || 0;
+        const hrDisplay = hr5m > 0 ? hr5m : hr24h;
+        const hrLabel   = hr5m > 0 ? 'TH/s live' : (hr24h > 0 ? 'TH/s 24h avg' : '');
+
+        el('pool-sats-unpaid').textContent = unpaid.toLocaleString() + ' sats';
+        el('pool-unpaid-usd').textContent  = satsToUsd(unpaid);
+        el('pool-hashrate').textContent    = hrDisplay > 0 ? hrDisplay.toFixed(2) + ' ' + hrLabel : '';
+        const uptime = pool.uptime_pct != null ? pool.uptime_pct.toFixed(0) + '% uptime 24h' : '';
+        el('pool-shares').textContent      = uptime;
+      } else {
+        el('pool-sats-unpaid').textContent = '—';
+        el('pool-unpaid-usd').textContent  = '';
+        el('pool-hashrate').textContent    = '';
+        el('pool-shares').textContent      = '';
+      }
+    } catch(e) {
+      console.warn('refresh error:', e);
+    }
+  }
+
+  // ── Settings ─────────────────────────────────────────────────
+  function showPanel(name, btn) {
+    document.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.settings-nav-item').forEach(b => b.classList.remove('active'));
+    el('panel-' + name).classList.add('active');
+    btn.classList.add('active');
+    if (name === 'system') loadEffChart();
+  }
+
+  async function loadSettings() {
+    try {
+      const resp = await fetch('/api/settings');
+      if (!resp.ok) return;
+      const s = await resp.json();
+
+      const textKeys = ['solis_api_key','solis_inverter_sn','miner_ip','location_name','lux_pool_username','lux_pool_api_url','telegram_chat_id'];
+      const pwdKeys  = ['solis_api_secret','lux_pool_api_key','telegram_bot_token','dehum_local_key'];
+      const numKeys  = [
+        'poll_interval_seconds','soc_on_threshold','soc_off_threshold',
+        'smart_soc_on_threshold','smart_soc_off_threshold',
+        'sunny_hours_threshold','radiation_threshold_wm2',
+        'location_lat','location_lon',
+        'battery_capacity_kwh','pv_peak_kw','miner_power_w',
+        'eod_soc_target', 'dehum_excess_threshold_w', 'dehum_version',
+        'dehum_min_run_minutes', 'dehum_min_off_minutes', 'dehum_manual_override_hours',
+        'api_fail_cycles',
+        'tg_soc_low_pct','tg_hashrate_drop_pct','tg_daily_hour','tg_sats_milestone_amount',
+        'tg_weekly_recap_hour',
+      ];
+
+      for (const k of textKeys) {
+        const inp = el('s-' + k);
+        if (inp) inp.value = s[k] || '';
+      }
+      for (const k of pwdKeys) {
+        const inp = el('s-' + k);
+        if (inp) inp.value = s[k] || '';
+      }
+      for (const k of numKeys) {
+        const inp = el('s-' + k);
+        if (inp && s[k] != null) inp.value = s[k];
+      }
+      const strKeys  = ['dehum_device_id','dehum_ip','lux_pool_username','lux_pool_api_url'];
+      for (const k of strKeys) { const i = el('s-'+k); if (i && s[k] != null) i.value = s[k]; }
+
+      const daySel = el('s-tg_weekly_recap_day');
+      if (daySel && s['tg_weekly_recap_day'] != null) daySel.value = s['tg_weekly_recap_day'];
+
+      const boolKeys = [
+        'smart_start_enabled', 'eod_soc_target_enabled', 'dehum_auto_enabled',
+        'tg_miner_onoff','tg_smart_start','tg_api_failure',
+        'tg_soc_low','tg_soc_full','tg_hashrate_drop',
+        'tg_daily_summary','tg_sats_milestone','tg_sunny_day_ahead','tg_weekly_recap',
+      ];
+      for (const k of boolKeys) {
+        const inp = el('s-' + k);
+        if (inp) inp.checked = !!s[k];
+      }
+      el('s-eod_soc_target').disabled = !el('s-eod_soc_target_enabled').checked;
+
+      // Populate select for api_fail_action
+      const sel = el('s-api_fail_action');
+      if (sel && s['api_fail_action']) sel.value = s['api_fail_action'];
+
+      if (s['dehum_excess_threshold_w']) dehumThresholdW = Number(s['dehum_excess_threshold_w']);
+    } catch(e) {
+      console.warn('loadSettings error:', e);
+    }
+  }
+
+  el('btn-reset-eff').onclick = async () => {
+    if (!confirm('Clear all learned efficiency data? It will relearn over the next few days.')) return;
+    const r = await fetch('/api/reset_efficiency', {method: 'POST'});
+    if (r.ok) { alert('Efficiency data cleared.'); }
+    else { alert('Failed to reset — check logs.'); }
+  };
+
+  async function saveSettings() {
+    const payload = {
+      solis_api_key:           el('s-solis_api_key').value,
+      solis_api_secret:        el('s-solis_api_secret').value,
+      solis_inverter_sn:       el('s-solis_inverter_sn').value,
+      miner_ip:                el('s-miner_ip').value,
+      poll_interval_seconds:   Number(el('s-poll_interval_seconds').value),
+      soc_on_threshold:        Number(el('s-soc_on_threshold').value),
+      soc_off_threshold:       Number(el('s-soc_off_threshold').value),
+      smart_start_enabled:     el('s-smart_start_enabled').checked,
+      smart_soc_on_threshold:  Number(el('s-smart_soc_on_threshold').value),
+      smart_soc_off_threshold: Number(el('s-smart_soc_off_threshold').value),
+      sunny_hours_threshold:   Number(el('s-sunny_hours_threshold').value),
+      radiation_threshold_wm2: Number(el('s-radiation_threshold_wm2').value),
+      eod_soc_target_enabled:  el('s-eod_soc_target_enabled').checked,
+      eod_soc_target:          Number(el('s-eod_soc_target').value) || 80,
+      dehum_device_id:         el('s-dehum_device_id').value,
+      dehum_ip:                el('s-dehum_ip').value,
+      dehum_local_key:         el('s-dehum_local_key').value || '••••',
+      dehum_version:           Number(el('s-dehum_version').value) || 3.3,
+      dehum_auto_enabled:          el('s-dehum_auto_enabled').checked,
+      dehum_excess_threshold_w:    Number(el('s-dehum_excess_threshold_w').value) || 500,
+      dehum_min_run_minutes:       Number(el('s-dehum_min_run_minutes').value) || 30,
+      dehum_min_off_minutes:       Number(el('s-dehum_min_off_minutes').value) || 15,
+      dehum_manual_override_hours: Number(el('s-dehum_manual_override_hours').value) || 2,
+      location_name:           el('s-location_name').value,
+      location_lat:            Number(el('s-location_lat').value),
+      location_lon:            Number(el('s-location_lon').value),
+      battery_capacity_kwh:    Number(el('s-battery_capacity_kwh').value),
+      pv_peak_kw:              Number(el('s-pv_peak_kw').value),
+      miner_power_w:           Number(el('s-miner_power_w').value),
+      api_fail_action:         el('s-api_fail_action').value,
+      api_fail_cycles:         Number(el('s-api_fail_cycles').value),
+      lux_pool_api_key:        el('s-lux_pool_api_key').value,
+      lux_pool_username:       el('s-lux_pool_username').value,
+      lux_pool_api_url:        el('s-lux_pool_api_url').value,
+      telegram_bot_token:      el('s-telegram_bot_token').value,
+      telegram_chat_id:        el('s-telegram_chat_id').value,
+      tg_miner_onoff:          el('s-tg_miner_onoff').checked,
+      tg_smart_start:          el('s-tg_smart_start').checked,
+      tg_api_failure:          el('s-tg_api_failure').checked,
+      tg_soc_low:              el('s-tg_soc_low').checked,
+      tg_soc_low_pct:          Number(el('s-tg_soc_low_pct').value),
+      tg_soc_full:             el('s-tg_soc_full').checked,
+      tg_hashrate_drop:        el('s-tg_hashrate_drop').checked,
+      tg_hashrate_drop_pct:    Number(el('s-tg_hashrate_drop_pct').value),
+      tg_daily_summary:        el('s-tg_daily_summary').checked,
+      tg_daily_hour:           Number(el('s-tg_daily_hour').value),
+      tg_sats_milestone:       el('s-tg_sats_milestone').checked,
+      tg_sats_milestone_amount:Number(el('s-tg_sats_milestone_amount').value),
+      tg_sunny_day_ahead:      el('s-tg_sunny_day_ahead').checked,
+      tg_weekly_recap:         el('s-tg_weekly_recap').checked,
+      tg_weekly_recap_day:     Number(el('s-tg_weekly_recap_day').value),
+      tg_weekly_recap_hour:    Number(el('s-tg_weekly_recap_hour').value),
+    };
+
+    try {
+      const resp = await fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      if (resp.ok) {
+        closeSettings();
+        refresh();
+      } else {
+        alert('Failed to save settings');
+      }
+    } catch(e) {
+      alert('Error saving settings: ' + e);
+    }
+  }
+
+  async function searchLocation() {
+    const raw = el('s-location_name').value.trim();
+    const zip = raw.replace(/\D/g, '').slice(0, 5);
+    if (!zip) { alert('Enter a ZIP code first'); return; }
+    if (!/^\d{5}$/.test(zip)) { alert('Please enter a valid 5-digit US ZIP code'); return; }
+    try {
+      const resp = await fetch('/api/geocode?q=' + encodeURIComponent(zip));
+      if (resp.ok) {
+        const data = await resp.json();
+        el('s-location_lat').value = data.lat;
+        el('s-location_lon').value = data.lon;
+        if (data.name) el('s-location_name').value = data.name;
+      } else {
+        alert('Location not found — check the ZIP code and try again');
+      }
+    } catch(e) {
+      alert('Geocode error: ' + e);
+    }
+  }
+
+  let _effAllRows = null;
+  let _effCurrentMonth = 1;
+
+  function _effDataForMonth(month) {
+    const byHour = {};
+    for (const r of (_effAllRows || [])) {
+      if (!byHour[r.hour]) byHour[r.hour] = {};
+      byHour[r.hour][r.month] = { ratio: r.ratio, samples: r.samples };
+    }
+    const result = [];
+    for (let h = 0; h < 24; h++) {
+      const monthMap = byHour[h] || {};
+      let found = null, fromMonth = null;
+      for (let offset = 0; offset < 7; offset++) {
+        const candidates = offset === 0 ? [month] : [
+          ((month - 1 + offset) % 12) + 1,
+          ((month - 1 - offset + 12) % 12) + 1,
+        ];
+        for (const m of candidates) {
+          if (monthMap[m] && monthMap[m].samples >= 3) { found = monthMap[m]; fromMonth = m; break; }
+        }
+        if (found) break;
+      }
+      // Include own-month early data even if <3 samples
+      if (!found && monthMap[month]) { found = monthMap[month]; fromMonth = month; }
+      if (found) result.push({ hour: h, ratio: found.ratio, samples: found.samples, fromMonth });
+    }
+    return result;
+  }
+
+  function _renderEffChart(month) {
+    const emptyEl = el('eff-chart-empty');
+    const canvasEl = el('eff-chart');
+    const rows = _effDataForMonth(month);
+
+    if (!rows.length) {
+      canvasEl.style.display = 'none';
+      emptyEl.style.display = '';
+      return;
+    }
+    canvasEl.style.display = '';
+    emptyEl.style.display = 'none';
+
+    const MONTH_NAMES = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const labels  = rows.map(r => r.hour + ':00');
+    const ratios  = rows.map(r => +(r.ratio * 100).toFixed(1));
+    const colors  = rows.map(r => {
+      if (r.fromMonth !== month) return 'rgba(251,146,60,0.65)';  // orange = borrowed
+      return r.samples >= 3 ? 'rgba(34,197,94,0.75)' : 'rgba(234,179,8,0.6)'; // green / yellow
+    });
+    const borders = rows.map(r => {
+      if (r.fromMonth !== month) return 'rgba(251,146,60,1)';
+      return r.samples >= 3 ? 'rgba(34,197,94,1)' : 'rgba(234,179,8,1)';
+    });
+
+    if (effChart) { effChart.destroy(); effChart = null; }
+    effChart = new Chart(canvasEl.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Efficiency %',
+            data: ratios,
+            backgroundColor: colors,
+            borderColor: borders,
+            borderWidth: 1,
+            borderRadius: 3,
+            order: 2,
+          },
+          {
+            label: '100% theoretical',
+            data: labels.map(() => 100),
+            type: 'line',
+            borderColor: 'rgba(255,255,255,0.25)',
+            borderWidth: 1,
+            borderDash: [4, 4],
+            pointRadius: 0,
+            fill: false,
+            order: 1,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            filter: (item) => item.datasetIndex === 0,
+            callbacks: {
+              label: (ctx) => {
+                const r = rows[ctx.dataIndex];
+                const borrowed = r.fromMonth !== month ? ` (from ${MONTH_NAMES[r.fromMonth]})` : '';
+                return [
+                  `${ctx.parsed.y.toFixed(1)}% of theoretical`,
+                  `${r.samples} sample${r.samples !== 1 ? 's' : ''}${borrowed}${r.samples < 3 && !borrowed ? ' (still learning)' : ''}`,
+                ];
+              }
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: '#888', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: {
+            min: 0,
+            ticks: { color: '#888', font: { size: 10 }, callback: v => v + '%' },
+            grid: { color: 'rgba(255,255,255,0.05)' }
+          }
+        }
+      }
+    });
+  }
+
+  async function loadEffChart() {
+    try {
+      const resp = await fetch('/api/pv_efficiency');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      _effAllRows = data.rows || [];
+      _effCurrentMonth = data.current_month || 1;
+      // Set selector to current month if not already changed
+      const sel = el('eff-month-select');
+      if (sel && !sel._userChanged) sel.value = String(_effCurrentMonth);
+      const selMonth = sel ? parseInt(sel.value) : _effCurrentMonth;
+      _renderEffChart(selMonth);
+    } catch(e) { console.warn('loadEffChart error:', e); }
+  }
+
+  function openSettings() {
+    el('settings-modal').classList.add('open');
+    loadSettings();
+  }
+
+  function closeSettings() {
+    el('settings-modal').classList.remove('open');
+  }
+
+  // Close modal on overlay click (not card click)
+  el('settings-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeSettings();
+  });
+
+  function togglePwd(inputId, btn) {
+    const inp = el(inputId);
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    btn.textContent = show ? '🙈' : '👁';
+  }
+
+  // Month selector for efficiency chart
+  el('eff-month-select').addEventListener('change', function() {
+    this._userChanged = true;
+    _renderEffChart(parseInt(this.value));
+  });
+
+  // ── Miner controls ───────────────────────────────────────────
+  let _fastPoll = null;
+
+  function _setMinerCard(mining, checking) {
+    const mEl = el('miner-state');
+    if (checking) {
+      mEl.textContent = '…';
+      mEl.style.color = 'var(--amber)';
+    } else if (mining === true) {
+      mEl.textContent = 'ON';
+      mEl.style.color = 'var(--green)';
+    } else if (mining === false) {
+      mEl.textContent = 'OFF';
+      mEl.style.color = 'var(--red)';
+    }
+  }
+
+  function _startFastPoll(desiredState) {
+    if (_fastPoll) clearInterval(_fastPoll);
+    let attempts = 0;
+    const maxAttempts = 10;  // 2s × 10 = 20s max
+    _setMinerCard(null, true);
+    _fastPoll = setInterval(async () => {
+      attempts++;
+      try {
+        const resp = await fetch('/api/miner/quick');
+        const data = await resp.json();
+        if (resp.ok) {
+          _setMinerCard(data.mining, false);
+          if (data.mining === desiredState || attempts >= maxAttempts) {
+            clearInterval(_fastPoll);
+            _fastPoll = null;
+            refresh();
+          }
+        }
+      } catch(e) {
+        if (attempts >= maxAttempts) { clearInterval(_fastPoll); _fastPoll = null; }
+      }
+    }, 2000);
+  }
+
+  async function minerStart() {
+    try {
+      const resp = await fetch('/api/miner/start', {method:'POST'});
+      const data = await resp.json();
+      if (!resp.ok) { alert('Error: ' + (data.error || 'unknown')); return; }
+      _startFastPoll(true);
+    } catch(e) { alert('Error: ' + e); }
+  }
+
+  async function minerStop() {
+    try {
+      const resp = await fetch('/api/miner/stop', {method:'POST'});
+      const data = await resp.json();
+      if (!resp.ok) { alert('Error: ' + (data.error || 'unknown')); return; }
+      _startFastPoll(false);
+    } catch(e) { alert('Error: ' + e); }
+  }
+
+  async function testTelegram() {
+    const res = el('tg-test-result');
+    res.textContent = 'Sending…';
+    res.style.color = 'var(--muted)';
+    try {
+      const resp = await fetch('/api/telegram/test', {method:'POST'});
+      const data = await resp.json();
+      if (resp.ok) {
+        res.textContent = '✓ Sent! Check Telegram. Bot: ' + data.bot;
+        res.style.color = 'var(--green)';
+      } else {
+        res.textContent = '✗ ' + (data.error || 'unknown error');
+        res.style.color = 'var(--red)';
+      }
+    } catch(e) {
+      res.textContent = '✗ ' + e;
+      res.style.color = 'var(--red)';
+    }
+  }
+
+  // ── Auto-refresh ─────────────────────────────────────────────
+  async function dehum(on) {
+    try {
+      const r = await fetch('/api/dehum/power', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({on}),
+      });
+      if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error || r.status)); return; }
+      await refresh();
+    } catch(e) { alert('Request failed: ' + e); }
+  }
+
+  setInterval(() => { refresh(); loadHistory(); loadDailySats(); }, 30000);
+
+  window.onload = () => { refresh(); loadHistory(); loadDailySats(); };
+</script>
+</body>
+</html>
