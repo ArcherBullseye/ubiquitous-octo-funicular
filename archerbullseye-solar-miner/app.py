@@ -1,0 +1,1151 @@
+import os
+import time
+import threading
+import warnings
+from datetime import datetime, date, timezone, timedelta
+from pathlib import Path
+from typing import Optional
+
+warnings.filterwarnings("ignore", message=".*urllib3.*", category=Warning)
+warnings.filterwarnings("ignore", message=".*OpenSSL.*", category=Warning)
+warnings.filterwarnings("ignore", category=UserWarning, module="urllib3")
+
+from dotenv import load_dotenv
+from flask import Flask, jsonify, render_template, request
+
+from db import init_db, get_settings, update_settings, save_reading, get_recent_readings, update_pv_efficiency, get_pv_efficiency, get_pv_efficiency_detail, add_daily_sats_delta, get_daily_sats, get_today_sats, reset_pv_efficiency, get_hourly_load_profile
+from solis_api import SolisClient, SolisApiError, parse_power_and_soc
+from luxos_api import LuxOsClient, LuxOsError
+from weather import get_weather, parse_weather, geocode as do_geocode
+from telegram_bot import TelegramBot
+from lux_pool import LuxPoolClient
+from dehumidifier import DehumidifierClient
+
+load_dotenv()
+
+app = Flask(__name__)
+
+state = {
+    "readings": None,
+    "miner_running": None,
+    "weather": None,
+    "pool": None,
+    "btc_price_usd": None,
+    "last_updated": None,
+    "weather_last_updated": None,
+    "pool_last_updated": None,
+    "effective_soc_on": 80.0,
+    "smart_start_active": False,
+    "cycle": 0,
+    "error": None,
+    "action": "none",
+    "eod_target": None,
+    "eod_projected_with": None,
+    "eod_projected_without": None,
+    "eod_protecting": False,
+    "dehum_power": None,
+    "dehum_humidity": None,
+    "dehum_tank_full": False,
+    "dehum_auto_on": False,
+    "dehum_error": None,
+    "dehum_auto_on_since": None,
+    "dehum_auto_off_since": None,
+    "dehum_manual_override_until": None,
+}
+state_lock = threading.Lock()
+
+luxos_client: Optional[LuxOsClient] = None
+luxos_lock = threading.Lock()
+_luxos_ip: Optional[str] = None
+
+SESSION_FILE = Path("data/luxos_session.txt")
+weather_refresh = threading.Event()
+
+# Notification state — only written by control_loop (no lock needed)
+notify_state = {
+    "api_fail_count": 0,
+    "api_fail_notified": False,
+    "api_fail_count_at_notify": 0,
+    "prev_mining": None,
+    "prev_smart_active": False,
+    "soc_low_notified": False,
+    "soc_full_notified": False,
+    "prev_hashrate_mhs": None,
+    "last_daily_date": None,
+    "last_weekly_recap_date": None,
+    "sats_milestone_last": 0,
+    "prev_sunny_day_notified": False,
+}
+
+
+# ── Session helpers ──────────────────────────────────────────────
+
+def _save_session(sid: Optional[str]) -> None:
+    try:
+        SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if sid:
+            SESSION_FILE.write_text(sid)
+        elif SESSION_FILE.exists():
+            SESSION_FILE.unlink()
+    except Exception:
+        pass
+
+
+def _load_session() -> Optional[str]:
+    try:
+        if SESSION_FILE.exists():
+            return SESSION_FILE.read_text().strip() or None
+    except Exception:
+        pass
+    return None
+
+
+def get_or_create_luxos(ip: str) -> LuxOsClient:
+    global luxos_client, _luxos_ip
+    with luxos_lock:
+        if luxos_client is not None and _luxos_ip == ip and luxos_client._session_id:
+            return luxos_client
+
+        if luxos_client is not None and _luxos_ip != ip:
+            try:
+                luxos_client.close()
+                _save_session(None)
+            except Exception:
+                pass
+            luxos_client = None
+
+        client = LuxOsClient(ip=ip)
+        _luxos_ip = ip
+
+        try:
+            client.logon()
+            _save_session(client._session_id)
+        except LuxOsError as e:
+            if "Another session is active" in str(e):
+                saved_sid = _load_session()
+                if saved_sid:
+                    try:
+                        tmp = LuxOsClient(ip=ip)
+                        tmp._session_id = saved_sid
+                        tmp.logoff()
+                        _save_session(None)
+                    except Exception:
+                        pass
+                client.logon()
+                _save_session(client._session_id)
+            else:
+                raise
+
+        luxos_client = client
+        return luxos_client
+
+
+def _clear_luxos_client() -> None:
+    global luxos_client, _luxos_ip
+    with luxos_lock:
+        if luxos_client is not None:
+            try:
+                luxos_client.close()
+                _save_session(None)
+            except Exception:
+                pass
+        luxos_client = None
+        _luxos_ip = None
+
+
+# ── Telegram helpers ─────────────────────────────────────────────
+
+def _get_bot(settings: dict) -> Optional[TelegramBot]:
+    token = settings.get("telegram_bot_token", "")
+    chat_id = settings.get("telegram_chat_id", "")
+    if token and chat_id:
+        return TelegramBot(token, chat_id)
+    return None
+
+
+def _fmt_ths(mhs: float) -> str:
+    if mhs <= 0:
+        return "0 MH/s"
+    if mhs >= 1_000_000:
+        return f"{mhs / 1_000_000:.1f} TH/s"
+    if mhs >= 1_000:
+        return f"{mhs / 1_000:.1f} GH/s"
+    return f"{mhs:.0f} MH/s"
+
+
+def _send_notifications(settings: dict, soc: Optional[float], actually_mining: bool,
+                        smart_active: bool, soc_on: float, effective_soc_on: float,
+                        effective_soc_off: float, hashrate_mhs: float) -> None:
+    bot = _get_bot(settings)
+    if not bot:
+        return
+
+    # ── Miner ON / OFF ──────────────────────────────────────────
+    if settings.get("tg_miner_onoff") and notify_state["prev_mining"] is not None:
+        if actually_mining and not notify_state["prev_mining"] and soc is not None:
+            smart_tag = " 🧠 <i>Smart Start</i>" if smart_active else ""
+            bot.send(
+                f"⛏ <b>Miner started</b>{smart_tag}\n"
+                f"SOC: {soc:.1f}% | Threshold: {effective_soc_on:.0f}%"
+            )
+        elif not actually_mining and notify_state["prev_mining"] and soc is not None:
+            bot.send(
+                f"💤 <b>Miner stopped</b>\n"
+                f"SOC: {soc:.1f}% | Off threshold: {effective_soc_off:.0f}%"
+            )
+
+    # ── Smart Start ON / OFF ─────────────────────────────────────
+    if settings.get("tg_smart_start"):
+        with state_lock:
+            wx = state.get("weather")
+        sunny = wx.get("remaining_sunny_hours", 0) if wx else 0
+        if smart_active and not notify_state["prev_smart_active"]:
+            bot.send(
+                f"🧠 <b>Smart Start activated</b>\n"
+                f"☀️ {sunny} sunny hours remaining\n"
+                f"Mining from {effective_soc_on:.0f}% SOC (normal: {soc_on:.0f}%)"
+            )
+        elif not smart_active and notify_state["prev_smart_active"]:
+            bot.send(
+                f"🌤 <b>Smart Start deactivated</b>\n"
+                f"Returning to normal {soc_on:.0f}% SOC threshold"
+            )
+
+    # ── SOC low warning ──────────────────────────────────────────
+    if settings.get("tg_soc_low") and soc is not None:
+        low_pct = float(settings.get("tg_soc_low_pct") or 20.0)
+        if soc < low_pct and not notify_state["soc_low_notified"]:
+            bot.send(
+                f"🔋 <b>Battery low: {soc:.1f}%</b>\n"
+                f"Miner is {'ON ⛏' if actually_mining else 'OFF 💤'}"
+            )
+            notify_state["soc_low_notified"] = True
+        elif soc >= low_pct + 5:
+            notify_state["soc_low_notified"] = False
+
+    # ── Battery fully charged ────────────────────────────────────
+    if settings.get("tg_soc_full") and soc is not None:
+        if soc >= 99.5 and not notify_state["soc_full_notified"]:
+            bot.send(
+                f"🌞 <b>Battery fully charged!</b>\n"
+                f"{'Miner running ⛏' if actually_mining else 'Ready to mine whenever you need'}"
+            )
+            notify_state["soc_full_notified"] = True
+        elif soc < 95:
+            notify_state["soc_full_notified"] = False
+
+    # ── Hashrate drop ────────────────────────────────────────────
+    if settings.get("tg_hashrate_drop") and hashrate_mhs > 0 and actually_mining:
+        drop_pct = float(settings.get("tg_hashrate_drop_pct") or 25.0)
+        prev_hr = notify_state.get("prev_hashrate_mhs") or 0
+        if prev_hr > 0:
+            drop = (prev_hr - hashrate_mhs) / prev_hr * 100
+            if drop >= drop_pct:
+                bot.send(
+                    f"📉 <b>Hashrate dropped {drop:.0f}%</b>\n"
+                    f"{_fmt_ths(hashrate_mhs)} (was {_fmt_ths(prev_hr)})\n"
+                    f"Possible thermal throttling or board issue"
+                )
+        notify_state["prev_hashrate_mhs"] = hashrate_mhs
+
+    # ── Sats milestone ───────────────────────────────────────────
+    if settings.get("tg_sats_milestone"):
+        with state_lock:
+            pool = state.get("pool") or {}
+        pool_sats = pool.get("sats_today", 0) or 0
+        milestone = int(settings.get("tg_sats_milestone_amount") or 1000)
+        if pool_sats > 0 and milestone > 0:
+            current_ms = (pool_sats // milestone) * milestone
+            if current_ms > notify_state["sats_milestone_last"]:
+                notify_state["sats_milestone_last"] = current_ms
+                bot.send(
+                    f"💰 <b>Sats milestone reached!</b>\n"
+                    f"{current_ms:,}+ sats earned today\n"
+                    f"({pool_sats:,} sats total)"
+                )
+
+    # ── Daily summary ────────────────────────────────────────────
+    if settings.get("tg_daily_summary"):
+        target_hour = int(settings.get("tg_daily_hour") or 7)
+        with state_lock:
+            tz_offset = int((state.get("weather") or {}).get("utc_offset_seconds") or 0)
+        local_now = datetime.now(timezone.utc) + timedelta(seconds=tz_offset)
+        today = local_now.strftime("%Y-%m-%d")
+        if local_now.hour == target_hour and notify_state["last_daily_date"] != today:
+            notify_state["last_daily_date"] = today
+            rows = get_recent_readings(hours=24)
+            if rows:
+                poll_sec = int(settings.get("poll_interval_seconds") or 60)
+                mining_cycles = sum(1 for r in rows if r.get("miner_running"))
+                mining_hours = mining_cycles * poll_sec / 3600
+                peak_soc = max(r["soc"] for r in rows)
+                min_soc = min(r["soc"] for r in rows)
+                hr_vals = [r.get("hashrate_mhs") or 0 for r in rows if r.get("miner_running")]
+                avg_hr = (sum(hr_vals) / len(hr_vals)) if hr_vals else 0
+                with state_lock:
+                    pool = state.get("pool") or {}
+                sats_str = f"{pool.get('sats_today', 0):,} sats" if pool else "N/A"
+                bot.send(
+                    f"📊 <b>Daily Mining Summary</b>\n"
+                    f"⛏ Mining time: {mining_hours:.1f}h\n"
+                    f"⚡ Avg hashrate: {_fmt_ths(avg_hr)}\n"
+                    f"📈 Peak SOC: {peak_soc:.1f}%\n"
+                    f"📉 Min SOC: {min_soc:.1f}%\n"
+                    f"💰 Sats today: {sats_str}"
+                )
+
+    # ── Weekly recap ─────────────────────────────────────────────
+    if settings.get("tg_weekly_recap"):
+        recap_day  = int(settings.get("tg_weekly_recap_day") or 0)   # 0=Mon … 6=Sun
+        recap_hour = int(settings.get("tg_weekly_recap_hour") or 8)
+        with state_lock:
+            tz_offset = int((state.get("weather") or {}).get("utc_offset_seconds") or 0)
+        local_now = datetime.now(timezone.utc) + timedelta(seconds=tz_offset)
+        today = local_now.strftime("%Y-%m-%d")
+        if local_now.weekday() == recap_day and local_now.hour == recap_hour:
+            if notify_state["last_weekly_recap_date"] != today:
+                notify_state["last_weekly_recap_date"] = today
+                rows = get_daily_sats(7)
+                if rows:
+                    total = sum(r["sats"] for r in rows)
+                    lines = "\n".join(
+                        f"  {r['date']}: {r['sats']:,}" for r in rows
+                    )
+                    bot.send(
+                        f"📅 <b>Weekly Sats Recap</b>\n"
+                        f"{lines}\n"
+                        f"─────────────────\n"
+                        f"<b>Total: {total:,} sats</b>"
+                    )
+
+    # ── Sunny day ahead (checked on weather update) ───────────────
+    if settings.get("tg_sunny_day_ahead"):
+        with state_lock:
+            wx = state.get("weather")
+        if wx:
+            sunny = wx.get("remaining_sunny_hours", 0) or 0
+            sunny_thresh = float(settings.get("sunny_hours_threshold") or 3.0)
+            smart_on = float(settings.get("smart_soc_on_threshold") or 60.0)
+            tonight = datetime.now().hour >= 20
+            if tonight and sunny < 1 and not notify_state["prev_sunny_day_notified"]:
+                pass  # don't alert if not sunny
+            elif sunny >= sunny_thresh and not notify_state["prev_sunny_day_notified"] and not smart_active:
+                notify_state["prev_sunny_day_notified"] = True
+                bot.send(
+                    f"☀️ <b>Good solar day ahead!</b>\n"
+                    f"{int(sunny)} sunny hours remaining\n"
+                    f"Smart Start will activate at {smart_on:.0f}% SOC"
+                )
+            elif sunny < sunny_thresh:
+                notify_state["prev_sunny_day_notified"] = False
+
+    # Update previous state for next cycle
+    notify_state["prev_mining"] = actually_mining
+    notify_state["prev_smart_active"] = smart_active
+
+
+# ── Control loop ─────────────────────────────────────────────────
+
+def _estimate_eod_soc(
+    soc: float,
+    battery_kwh: float,
+    hourly_wx: list,
+    pv_peak_kw: float,
+    eff_map: dict,
+    load_profile: dict,
+    miner_power_w: float,
+    include_miner: bool,
+) -> Optional[float]:
+    """
+    Project battery SOC (%) at end of today's solar generation window.
+    Iterates remaining hourly forecast slots until radiation drops below 50 W/m²,
+    accumulating net energy (PV - house load - miner if include_miner).
+    Returns None if insufficient data to estimate.
+    """
+    if battery_kwh <= 0 or not hourly_wx:
+        return None
+
+    now_hour = datetime.now().hour
+    energy_kwh = (soc / 100.0) * battery_kwh
+    found_solar = False
+
+    for slot in hourly_wx:
+        try:
+            slot_hour = int(str(slot.get("time", "")).split(":")[0])
+        except (ValueError, IndexError):
+            continue
+        if slot_hour < now_hour:
+            continue
+
+        rad = float(slot.get("radiation_w") or 0)
+        if rad < 50:
+            if found_solar:
+                break  # past end of solar window
+            continue   # pre-dawn hours before generation starts
+
+        found_solar = True
+
+        # PV production this hour
+        theoretical = pv_peak_kw * rad / 1000.0
+        eff = eff_map.get(slot_hour)
+        pv = theoretical * eff if (eff and eff > 0.05) else theoretical
+
+        # House load this hour (fall back to 400 W if no history yet)
+        load_w = load_profile.get(slot_hour, 400.0)
+
+        # Miner draw
+        miner = (miner_power_w / 1000.0) if include_miner else 0.0
+
+        energy_kwh += pv - (load_w / 1000.0) - miner
+        energy_kwh = max(0.0, min(battery_kwh, energy_kwh))
+
+    if not found_solar:
+        return None
+
+    return round((energy_kwh / battery_kwh) * 100.0, 1)
+
+
+def control_loop() -> None:
+    while True:
+        loop_start = time.monotonic()
+        try:
+            settings = get_settings()
+
+            api_key    = settings.get("solis_api_key")    or os.getenv("SOLIS_API_KEY", "")
+            api_secret = settings.get("solis_api_secret") or os.getenv("SOLIS_API_SECRET", "")
+            inverter_sn = settings.get("solis_inverter_sn") or os.getenv("SOLIS_INVERTER_SN", "")
+            miner_ip   = settings.get("miner_ip")         or os.getenv("LUXOS_MINER_IP", "")
+
+            poll_interval       = int(settings.get("poll_interval_seconds") or 60)
+            soc_on              = float(settings.get("soc_on_threshold") or 85.0)
+            soc_off             = float(settings.get("soc_off_threshold") or 80.0)
+            smart_start_enabled = bool(settings.get("smart_start_enabled", True))
+            smart_soc_on        = float(settings.get("smart_soc_on_threshold") or 60.0)
+            smart_soc_off       = float(settings.get("smart_soc_off_threshold") or 55.0)
+            sunny_hours_threshold = float(settings.get("sunny_hours_threshold") or 3.0)
+            api_fail_action     = settings.get("api_fail_action", "stop")
+            api_fail_cycles     = int(settings.get("api_fail_cycles") or 3)
+
+            # Determine effective thresholds (smart start)
+            with state_lock:
+                current_weather = state.get("weather")
+                cycle_num = state.get("cycle", 0) + 1
+
+            pv_peak_kw   = float(settings.get("pv_peak_kw") or 0.0)
+            miner_power_w = float(settings.get("miner_power_w") or 0.0)
+
+            smart_active = False
+            effective_soc_on  = soc_on
+            effective_soc_off = soc_off
+
+            if smart_start_enabled and current_weather is not None:
+                hourly = current_weather.get("hourly") or []
+                if pv_peak_kw > 0 and miner_power_w > 0:
+                    # Learned efficiency model: predict actual output per forecast hour
+                    with state_lock:
+                        _wx_tz = int((state.get("weather") or {}).get("utc_offset_seconds") or 0)
+                    _local_month = (datetime.now(timezone.utc) + timedelta(seconds=_wx_tz)).month
+                    efficiency_map = get_pv_efficiency(_local_month)
+                    profitable_hours = 0
+                    for slot in hourly:
+                        rad   = float(slot.get("radiation_w") or 0)
+                        htime = slot.get("time", "")  # "HH:MM"
+                        try:
+                            hour_of_day = int(htime.split(":")[0])
+                        except (ValueError, IndexError):
+                            continue
+                        eff = efficiency_map.get(hour_of_day)
+                        if eff is not None:
+                            # We have learned data — use predicted output vs miner draw
+                            if rad * pv_peak_kw * 1000.0 * eff >= miner_power_w:
+                                profitable_hours += 1
+                        else:
+                            # No learned data yet — count hours above radiation threshold
+                            if rad > float(settings.get("radiation_threshold_wm2") or 300.0):
+                                profitable_hours += 1
+                    remaining_sunny = current_weather.get("remaining_sunny_hours", 0)
+                    if profitable_hours >= sunny_hours_threshold:
+                        smart_active = True
+                    elif remaining_sunny >= sunny_hours_threshold:
+                        # Efficiency model only covers 8 slots — fall back to full-day count
+                        smart_active = True
+                else:
+                    # PV peak or miner watts not configured — use raw radiation count
+                    remaining_sunny = current_weather.get("remaining_sunny_hours", 0)
+                    if remaining_sunny >= sunny_hours_threshold:
+                        smart_active = True
+
+                if smart_active:
+                    effective_soc_on  = smart_soc_on
+                    effective_soc_off = smart_soc_off
+
+            # ── Poll Solis ───────────────────────────────────────
+            readings  = None
+            error_str = None
+            action    = "none"
+            cur_rad   = 0.0
+            miner_running = None
+
+            if api_key and api_secret and inverter_sn:
+                try:
+                    solis = SolisClient(
+                        api_key=api_key,
+                        api_secret=api_secret,
+                        base_url=settings.get("solis_base_url", "https://www.soliscloud.com:13333"),
+                    )
+                    inverter_data = solis.get_inverter_detail(inverter_sn)
+                    readings = parse_power_and_soc(inverter_data)
+                    # Learn PV efficiency for this hour
+                    if readings and pv_peak_kw > 0:
+                        with state_lock:
+                            wx = state.get("weather")
+                        cur_rad = float(wx.get("current_radiation_w", 0) if wx else 0)
+                        if cur_rad > 50:  # ignore near-zero radiation (night/overcast)
+                            tz_offset = int((wx or {}).get("utc_offset_seconds") or 0)
+                            local_now = datetime.now(timezone.utc) + timedelta(seconds=tz_offset)
+                            update_pv_efficiency(
+                                month=local_now.month,
+                                hour_of_day=local_now.hour,
+                                actual_w=readings["input_power_w"],
+                                radiation_wm2=cur_rad,
+                                pv_peak_kw=pv_peak_kw,
+                            )
+                    # Reset fail counter on success
+                    if notify_state["api_fail_notified"]:
+                        bot = _get_bot(settings)
+                        if bot and settings.get("tg_api_failure"):
+                            bot.send(
+                                f"✅ <b>Solis API recovered</b>\n"
+                                f"Back online after {notify_state['api_fail_count_at_notify']} failed cycles"
+                            )
+                        notify_state["api_fail_notified"] = False
+                    notify_state["api_fail_count"] = 0
+                except SolisApiError as e:
+                    error_str = f"Solis API error: {e}"
+                    notify_state["api_fail_count"] += 1
+                except Exception as e:
+                    error_str = f"Solis unexpected error: {e}"
+                    notify_state["api_fail_count"] += 1
+            else:
+                error_str = "Solis credentials not configured"
+
+            # ── API Failsafe ─────────────────────────────────────
+            if readings is None and miner_ip and notify_state["api_fail_count"] >= api_fail_cycles:
+                if api_fail_action in ("stop", "start"):
+                    try:
+                        client = get_or_create_luxos(miner_ip)
+                        if api_fail_action == "stop":
+                            client.stop_mining()
+                            action = "fail_stop"
+                        else:
+                            client.start_mining()
+                            action = "fail_start"
+                    except LuxOsError as e:
+                        error_str = (error_str or "") + f" | Fail-safe action error: {e}"
+
+                if not notify_state["api_fail_notified"]:
+                    notify_state["api_fail_notified"] = True
+                    notify_state["api_fail_count_at_notify"] = notify_state["api_fail_count"]
+                    bot = _get_bot(settings)
+                    if bot and settings.get("tg_api_failure"):
+                        action_desc = {
+                            "stop":  "Miner stopped as failsafe",
+                            "start": "Miner kept running (failsafe)",
+                            "keep":  "No action taken — monitoring",
+                        }.get(api_fail_action, "No action")
+                        bot.send(
+                            f"⚠️ <b>Solis API offline</b>\n"
+                            f"{notify_state['api_fail_count']} consecutive failures\n"
+                            f"Action: {action_desc}"
+                        )
+
+            # ── Control miner ────────────────────────────────────
+            hashrate_mhs = 0.0
+
+            if readings is not None and miner_ip:
+                soc = readings["soc"]
+                try:
+                    client = get_or_create_luxos(miner_ip)
+                    try:
+                        actually_mining = client.is_mining()
+                        hashrate_mhs = client.last_hashrate_mhs
+                    except LuxOsError:
+                        _clear_luxos_client()
+                        client = get_or_create_luxos(miner_ip)
+                        actually_mining = client.is_mining()
+                        hashrate_mhs = client.last_hashrate_mhs
+
+                    miner_running = actually_mining
+
+                    # Hysteresis: smart start uses single threshold; normal mode uses on/off buffer
+                    if smart_active:
+                        desired_mining = soc >= effective_soc_on
+                    elif actually_mining:
+                        desired_mining = soc >= effective_soc_off
+                    else:
+                        desired_mining = soc >= effective_soc_on
+
+                    # EOD target override: project SOC at end of solar day and stop
+                    # the miner early if running would cause us to miss the target.
+                    eod_enabled = bool(settings.get("eod_soc_target_enabled", False))
+                    eod_target  = float(settings.get("eod_soc_target") or 80.0)
+                    battery_kwh = float(settings.get("battery_capacity_kwh") or 0.0)
+                    eod_projected_with    = None
+                    eod_projected_without = None
+                    eod_protecting        = False
+                    if eod_enabled and eod_target > 0.0 and battery_kwh > 0.0 and pv_peak_kw > 0.0:
+                        hourly_wx   = (current_weather or {}).get("hourly", [])
+                        load_profile = get_hourly_load_profile()
+                        _eod_tz = int((current_weather or {}).get("utc_offset_seconds") or 0)
+                        _eod_month = (datetime.now(timezone.utc) + timedelta(seconds=_eod_tz)).month
+                        eff_map      = get_pv_efficiency(_eod_month)
+                        eod_projected_with = _estimate_eod_soc(
+                            soc=soc, battery_kwh=battery_kwh,
+                            hourly_wx=hourly_wx, pv_peak_kw=pv_peak_kw,
+                            eff_map=eff_map, load_profile=load_profile,
+                            miner_power_w=miner_power_w, include_miner=True,
+                        )
+                        eod_projected_without = _estimate_eod_soc(
+                            soc=soc, battery_kwh=battery_kwh,
+                            hourly_wx=hourly_wx, pv_peak_kw=pv_peak_kw,
+                            eff_map=eff_map, load_profile=load_profile,
+                            miner_power_w=miner_power_w, include_miner=False,
+                        )
+                        if desired_mining and eod_projected_with is not None \
+                                and eod_projected_with < eod_target:
+                            desired_mining = False
+                            eod_protecting = True
+
+                    with state_lock:
+                        state["eod_target"]            = eod_target if eod_enabled else None
+                        state["eod_projected_with"]    = eod_projected_with
+                        state["eod_projected_without"] = eod_projected_without
+                        state["eod_protecting"]        = eod_protecting
+
+                    if actually_mining != desired_mining:
+                        if desired_mining:
+                            try:
+                                client.start_mining()
+                                action = "started"
+                            except LuxOsError:
+                                _clear_luxos_client()
+                                try:
+                                    client = get_or_create_luxos(miner_ip)
+                                    client.start_mining()
+                                    action = "started"
+                                except LuxOsError as e2:
+                                    error_str = (error_str or "") + f" | Miner start error: {e2}"
+                                    action = "error_starting"
+                        else:
+                            try:
+                                client.stop_mining()
+                                action = "stopped"
+                            except LuxOsError:
+                                _clear_luxos_client()
+                                try:
+                                    client = get_or_create_luxos(miner_ip)
+                                    client.stop_mining()
+                                    action = "stopped"
+                                except LuxOsError as e2:
+                                    error_str = (error_str or "") + f" | Miner stop error: {e2}"
+                                    action = "error_stopping"
+                    else:
+                        action = "none"
+
+                    # ── Telegram notifications ───────────────────
+                    _send_notifications(
+                        settings=settings,
+                        soc=soc,
+                        actually_mining=actually_mining,
+                        smart_active=smart_active,
+                        soc_on=soc_on,
+                        effective_soc_on=effective_soc_on,
+                        effective_soc_off=effective_soc_off,
+                        hashrate_mhs=hashrate_mhs,
+                    )
+
+                except LuxOsError as e:
+                    error_str = (error_str or "") + f" | Miner error: {e}"
+                    action = "error"
+                except Exception as e:
+                    error_str = (error_str or "") + f" | Miner unexpected error: {e}"
+                    action = "error"
+
+            elif not miner_ip and error_str is None:
+                error_str = "Miner IP not configured"
+
+            # ── Dehumidifier auto control ─────────────────────────
+            dehum_id  = settings.get("dehum_device_id", "").strip()
+            dehum_ip  = settings.get("dehum_ip", "").strip()
+            dehum_key = settings.get("dehum_local_key", "").strip()
+            dehum_auto = bool(settings.get("dehum_auto_enabled", False))
+            dehum_threshold = float(settings.get("dehum_excess_threshold_w") or 500.0)
+            dehum_ver = float(settings.get("dehum_version") or 3.3)
+            min_run_s = float(settings.get("dehum_min_run_minutes") or 30) * 60
+            min_off_s = float(settings.get("dehum_min_off_minutes") or 15) * 60
+
+            if dehum_id and dehum_ip and dehum_key:
+                try:
+                    dc = DehumidifierClient(dehum_id, dehum_ip, dehum_key, dehum_ver)
+                    status = dc.get_status()
+                    if status:
+                        dehum_power    = status["power"]
+                        dehum_humidity = status["humidity"]
+                        dehum_tank     = status["tank_full"]
+                        dehum_auto_on  = False
+
+                        now_ts = time.time()
+                        with state_lock:
+                            manual_until  = state.get("dehum_manual_override_until")
+                            auto_on_since  = state.get("dehum_auto_on_since")
+                            auto_off_since = state.get("dehum_auto_off_since")
+
+                        # expire manual override
+                        if manual_until and now_ts >= manual_until:
+                            manual_until = None
+                            with state_lock:
+                                state["dehum_manual_override_until"] = None
+
+                        if dehum_auto and readings is not None and not dehum_tank and not manual_until:
+                            grid_w = readings.get("grid_power_w", 0) or 0
+
+                            if not dehum_power and grid_w > dehum_threshold:
+                                # Respect min-off time before turning back on
+                                if auto_off_since is None or (now_ts - auto_off_since) >= min_off_s:
+                                    dc.set_power(True)
+                                    dehum_power = True
+                                    auto_on_since = now_ts
+                                    auto_off_since = None
+                                dehum_auto_on = dehum_power
+                            elif dehum_power and grid_w < (dehum_threshold - 200):
+                                # Respect min-run time before turning off
+                                if auto_on_since is None or (now_ts - auto_on_since) >= min_run_s:
+                                    dc.set_power(False)
+                                    dehum_power = False
+                                    auto_off_since = now_ts
+                                    auto_on_since = None
+                                else:
+                                    dehum_auto_on = True  # still in min-run window
+                            elif dehum_power:
+                                dehum_auto_on = True
+
+                        with state_lock:
+                            state["dehum_power"]               = dehum_power
+                            state["dehum_humidity"]             = dehum_humidity
+                            state["dehum_tank_full"]            = dehum_tank
+                            state["dehum_auto_on"]              = dehum_auto_on
+                            state["dehum_error"]                = None
+                            state["dehum_auto_on_since"]        = auto_on_since
+                            state["dehum_auto_off_since"]       = auto_off_since
+                except Exception as e:
+                    with state_lock:
+                        state["dehum_error"] = str(e)
+
+            now_str = datetime.now(timezone.utc).isoformat()
+
+            with state_lock:
+                state["readings"]          = readings
+                state["miner_running"]     = miner_running
+                state["last_updated"]      = now_str
+                state["effective_soc_on"]  = effective_soc_on
+                state["smart_start_active"] = smart_active
+                state["cycle"]             = cycle_num
+                state["error"]             = error_str
+                state["action"]            = action
+
+            if readings is not None:
+                save_reading({
+                    "ts":              now_str,
+                    "soc":             readings["soc"],
+                    "battery_power_w": readings["battery_power_w"],
+                    "input_power_w":   readings["input_power_w"],
+                    "grid_power_w":    readings["grid_power_w"],
+                    "load_power_w":    readings["load_power_w"],
+                    "backup_power_w":  readings["backup_power_w"],
+                    "miner_running":   miner_running,
+                    "action":          action,
+                    "effective_soc_on": effective_soc_on,
+                    "hashrate_mhs":    hashrate_mhs,
+                    "radiation_wm2":   cur_rad,
+                })
+
+        except Exception as e:
+            with state_lock:
+                state["error"] = f"Control loop error: {e}"
+            print(f"Control loop unhandled exception: {e}")
+
+        elapsed = time.monotonic() - loop_start
+        try:
+            settings = get_settings()
+            poll_interval = int(settings.get("poll_interval_seconds") or 60)
+        except Exception:
+            poll_interval = 60
+        time.sleep(max(0.0, poll_interval - elapsed))
+
+
+# ── Weather loop ─────────────────────────────────────────────────
+
+def weather_loop() -> None:
+    while True:
+        try:
+            settings = get_settings()
+            lat = float(settings.get("location_lat") or 0.0)
+            lon = float(settings.get("location_lon") or 0.0)
+            radiation_threshold = float(settings.get("radiation_threshold_wm2") or 300.0)
+
+            if lat != 0.0 or lon != 0.0:
+                raw = get_weather(lat, lon)
+                if raw is not None:
+                    parsed = parse_weather(raw, radiation_threshold=radiation_threshold)
+                    now_str = datetime.now(timezone.utc).isoformat()
+                    with state_lock:
+                        state["weather"] = parsed
+                        state["weather_last_updated"] = now_str
+        except Exception as e:
+            print(f"Weather loop error: {e}")
+
+        weather_refresh.wait(timeout=1800)
+        weather_refresh.clear()
+
+
+# ── Pool loop ────────────────────────────────────────────────────
+
+def _fetch_btc_price() -> Optional[float]:
+    """Fetch current BTC/USD price from mempool.space (free, no auth)."""
+    try:
+        import requests as _req
+        resp = _req.get("https://mempool.space/api/v1/prices", timeout=8)
+        resp.raise_for_status()
+        return float(resp.json().get("USD", 0) or 0) or None
+    except Exception:
+        return None
+
+
+def pool_loop() -> None:
+    # Luxor only exposes a rolling 24h revenue window, not per-calendar-day data.
+    # We track positive deltas between polls to accumulate true daily earnings.
+    # On startup we skip the first reading to avoid crediting the entire 24h
+    # backlog as today's earnings.
+    prev_sats = None  # type: Optional[int]
+
+    while True:
+        try:
+            # Fetch BTC price
+            price = _fetch_btc_price()
+            if price:
+                with state_lock:
+                    state["btc_price_usd"] = price
+
+            settings = get_settings()
+            api_key  = settings.get("lux_pool_api_key", "")
+            username = settings.get("lux_pool_username", "")
+            api_url  = settings.get("lux_pool_api_url", "")
+            if api_key and username:
+                client = LuxPoolClient(api_key=api_key, username=username, api_url=api_url)
+                summary = client.get_summary()
+                if summary is not None:
+                    now_str = datetime.now(timezone.utc).isoformat()
+                    with state_lock:
+                        state["pool"] = summary
+                        state["pool_last_updated"] = now_str
+                    sats = summary.get("sats_today", 0) or 0
+                    if prev_sats is not None:
+                        delta = sats - prev_sats
+                        if delta > 0:
+                            with state_lock:
+                                tz_offset = int((state.get("weather") or {}).get("utc_offset_seconds") or 0)
+                            local_date = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).strftime("%Y-%m-%d")
+                            add_daily_sats_delta(local_date, delta)
+                    prev_sats = sats
+        except Exception as e:
+            print(f"Pool loop error: {e}")
+        time.sleep(300)  # refresh every 5 minutes
+
+
+# ── Flask routes ─────────────────────────────────────────────────
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+@app.route("/api/status")
+def api_status():
+    with state_lock:
+        snapshot = dict(state)
+    settings = get_settings()
+    tz_offset = int((snapshot.get("weather") or {}).get("utc_offset_seconds") or 0)
+    _cur_month = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).month
+    snapshot["pv_efficiency"] = get_pv_efficiency(_cur_month)
+    snapshot["pv_peak_kw"] = float(settings.get("pv_peak_kw") or 0.0)
+    snapshot["eod_soc_target"]         = float(settings.get("eod_soc_target") or 80.0)
+    snapshot["eod_soc_target_enabled"] = bool(settings.get("eod_soc_target_enabled", False))
+    local_date = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).strftime("%Y-%m-%d")
+    snapshot["today_sats"]             = get_today_sats(local_date)
+    return jsonify(snapshot)
+
+
+@app.route("/api/history")
+def api_history():
+    hours = int(request.args.get("hours", 2))
+    rows = get_recent_readings(hours)
+    return jsonify(rows)
+
+
+@app.route("/api/daily_sats")
+def api_daily_sats():
+    days = int(request.args.get("days", 7))
+    return jsonify(get_daily_sats(days))
+
+
+@app.route("/api/dehum/test")
+def api_dehum_test():
+    settings = get_settings()
+    dehum_id  = settings.get("dehum_device_id", "").strip()
+    dehum_ip  = settings.get("dehum_ip", "").strip()
+    dehum_key = settings.get("dehum_local_key", "").strip()
+    dehum_ver = float(settings.get("dehum_version") or 3.3)
+    if not (dehum_id and dehum_ip and dehum_key):
+        return jsonify({"error": "Not configured"}), 400
+    try:
+        dc = DehumidifierClient(dehum_id, dehum_ip, dehum_key, dehum_ver)
+        raw = dc.raw_status()
+        return jsonify({"raw": raw})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dehum/power", methods=["POST"])
+def api_dehum_power():
+    on = request.json.get("on")
+    if on is None:
+        return jsonify({"error": "missing 'on' field"}), 400
+    settings = get_settings()
+    dehum_id  = settings.get("dehum_device_id", "").strip()
+    dehum_ip  = settings.get("dehum_ip", "").strip()
+    dehum_key = settings.get("dehum_local_key", "").strip()
+    dehum_ver = float(settings.get("dehum_version") or 3.3)
+    if not (dehum_id and dehum_ip and dehum_key):
+        return jsonify({"error": "Dehumidifier not configured"}), 400
+    try:
+        override_hours = float(settings.get("dehum_manual_override_hours") or 2)
+        dc = DehumidifierClient(dehum_id, dehum_ip, dehum_key, dehum_ver)
+        ok = dc.set_power(bool(on))
+        if ok:
+            with state_lock:
+                state["dehum_power"] = bool(on)
+                state["dehum_auto_on"] = False
+                state["dehum_manual_override_until"] = time.time() + override_hours * 3600
+                state["dehum_auto_on_since"] = None
+                state["dehum_auto_off_since"] = None
+        return jsonify({"ok": ok})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reset_efficiency", methods=["POST"])
+def api_reset_efficiency():
+    reset_pv_efficiency()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/pv_efficiency")
+def api_pv_efficiency():
+    settings = get_settings()
+    pv_peak_kw = float(settings.get("pv_peak_kw") or 0.0)
+    rows = get_pv_efficiency_detail()
+    with state_lock:
+        tz_offset = int((state.get("weather") or {}).get("utc_offset_seconds") or 0)
+    current_month = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).month
+    return jsonify({"rows": rows, "pv_peak_kw": pv_peak_kw, "current_month": current_month})
+
+
+@app.route("/api/settings", methods=["GET"])
+def api_get_settings():
+    settings = get_settings()
+    secret = settings.get("solis_api_secret", "")
+    if len(secret) > 4:
+        settings["solis_api_secret"] = "••••" + secret[-4:]
+    else:
+        settings["solis_api_secret"] = "••••"
+    if settings.get("dehum_local_key"):
+        settings["dehum_local_key"] = "••••"
+    return jsonify(settings)
+
+
+@app.route("/api/settings", methods=["POST"])
+def api_post_settings():
+    data = request.get_json(force=True) or {}
+    if "solis_api_secret" in data and str(data["solis_api_secret"]).startswith("••••"):
+        del data["solis_api_secret"]
+    if "dehum_local_key" in data and str(data["dehum_local_key"]).startswith("••••"):
+        del data["dehum_local_key"]
+
+    numeric_keys = [
+        "poll_interval_seconds", "soc_on_threshold", "soc_off_threshold",
+        "smart_soc_on_threshold", "smart_soc_off_threshold",
+        "sunny_hours_threshold", "radiation_threshold_wm2",
+        "location_lat", "location_lon",
+        "battery_capacity_kwh", "pv_peak_kw", "miner_power_w",
+        "eod_soc_target", "dehum_excess_threshold_w", "dehum_version",
+        "dehum_min_run_minutes", "dehum_min_off_minutes", "dehum_manual_override_hours",
+        "api_fail_cycles",
+        "tg_soc_low_pct", "tg_hashrate_drop_pct", "tg_daily_hour",
+        "tg_sats_milestone_amount", "tg_weekly_recap_day", "tg_weekly_recap_hour",
+    ]
+    for k in numeric_keys:
+        if k in data:
+            try:
+                if k in ("poll_interval_seconds", "api_fail_cycles", "tg_daily_hour",
+                         "tg_sats_milestone_amount", "tg_weekly_recap_day", "tg_weekly_recap_hour"):
+                    data[k] = int(data[k])
+                else:
+                    data[k] = float(data[k])
+            except (ValueError, TypeError):
+                pass
+
+    bool_keys = [
+        "smart_start_enabled", "eod_soc_target_enabled", "dehum_auto_enabled",
+        "tg_miner_onoff", "tg_smart_start", "tg_api_failure",
+        "tg_soc_low", "tg_soc_full", "tg_hashrate_drop",
+        "tg_daily_summary", "tg_sats_milestone", "tg_sunny_day_ahead", "tg_weekly_recap",
+    ]
+    for k in bool_keys:
+        if k in data:
+            val = data[k]
+            data[k] = val if isinstance(val, bool) else str(val).lower() in ("true", "1", "yes", "on")
+
+    update_settings(data)
+
+    if float(data.get("location_lat") or 0) or float(data.get("location_lon") or 0):
+        weather_refresh.set()
+
+    return jsonify({"ok": True})
+
+
+@app.route("/api/geocode")
+def api_geocode():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"error": "missing q parameter"}), 400
+    result = do_geocode(q)
+    if result is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(result)
+
+
+@app.route("/api/miner/start", methods=["POST"])
+def api_miner_start():
+    try:
+        settings = get_settings()
+        miner_ip = settings.get("miner_ip") or os.getenv("LUXOS_MINER_IP", "")
+        if not miner_ip:
+            return jsonify({"error": "Miner IP not configured"}), 400
+        client = get_or_create_luxos(miner_ip)
+        client.start_mining()
+        with state_lock:
+            state["miner_running"] = True
+        return jsonify({"ok": True})
+    except LuxOsError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/miner/stop", methods=["POST"])
+def api_miner_stop():
+    try:
+        settings = get_settings()
+        miner_ip = settings.get("miner_ip") or os.getenv("LUXOS_MINER_IP", "")
+        if not miner_ip:
+            return jsonify({"error": "Miner IP not configured"}), 400
+        client = get_or_create_luxos(miner_ip)
+        client.stop_mining()
+        with state_lock:
+            state["miner_running"] = False
+        return jsonify({"ok": True})
+    except LuxOsError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/miner/quick")
+def api_miner_quick():
+    """Direct poll of the miner — bypasses control loop for fast status updates."""
+    try:
+        settings = get_settings()
+        miner_ip = settings.get("miner_ip") or os.getenv("LUXOS_MINER_IP", "")
+        if not miner_ip:
+            return jsonify({"error": "Miner IP not configured"}), 400
+        client = get_or_create_luxos(miner_ip)
+        mining = client.is_mining()
+        hashrate_mhs = client.last_hashrate_mhs
+        with state_lock:
+            state["miner_running"] = mining
+        return jsonify({"mining": mining, "hashrate_mhs": hashrate_mhs})
+    except LuxOsError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/telegram/test", methods=["POST"])
+def api_telegram_test():
+    settings = get_settings()
+    bot = _get_bot(settings)
+    if not bot:
+        return jsonify({"error": "Telegram not configured — add bot token and chat ID"}), 400
+    validation = bot.validate()
+    if not validation.startswith("@"):
+        return jsonify({"error": validation}), 400
+    ok = bot.send(
+        f"✅ <b>Solar Miner connected!</b>\n"
+        f"Notifications are working. Bot: {validation}"
+    )
+    if ok:
+        return jsonify({"ok": True, "bot": validation})
+    return jsonify({"error": "Message send failed — check chat ID"}), 500
+
+
+@app.route("/api/pool/status")
+def api_pool_status():
+    with state_lock:
+        pool = state.get("pool")
+        ts   = state.get("pool_last_updated")
+    return jsonify({"pool": pool, "last_updated": ts})
+
+
+if __name__ == "__main__":
+    init_db()
+
+    # Prevent duplicate notifications on restart — seed with today so they
+    # don't re-fire if the container restarts within the same trigger hour.
+    notify_state["last_daily_date"] = date.today().isoformat()
+    notify_state["last_weekly_recap_date"] = date.today().isoformat()
+
+    settings_now = get_settings()
+    seed_map = {
+        "SOLIS_API_KEY":    "solis_api_key",
+        "SOLIS_API_SECRET": "solis_api_secret",
+        "SOLIS_INVERTER_SN":"solis_inverter_sn",
+        "LUXOS_MINER_IP":   "miner_ip",
+    }
+    seeds = {}
+    for env_key, db_key in seed_map.items():
+        env_val = os.getenv(env_key, "")
+        if env_val and not settings_now.get(db_key):
+            seeds[db_key] = env_val
+    if seeds:
+        update_settings(seeds)
+
+    t_control = threading.Thread(target=control_loop, daemon=True, name="control-loop")
+    t_control.start()
+
+    t_weather = threading.Thread(target=weather_loop, daemon=True, name="weather-loop")
+    t_weather.start()
+
+    t_pool = threading.Thread(target=pool_loop, daemon=True, name="pool-loop")
+    t_pool.start()
+
+    app.run(host="0.0.0.0", port=3000, debug=False)
