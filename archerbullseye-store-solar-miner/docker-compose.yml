@@ -4,7 +4,7 @@ services:
 
   app_proxy:
     environment:
-      APP_HOST: archerbullseye-solar-miner_app_1
+      APP_HOST: archerbullseye-store-solar-miner_app_1
       APP_PORT: 3000
 
   app:

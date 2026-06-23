@@ -1,8 +1,8 @@
 manifestVersion: 1
-id: archerbullseye-solar-miner
+id: archerbullseye-store-solar-miner
 name: Solar Miner
 tagline: Control your Bitcoin miner with solar power
-icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-solar-miner/icon.svg
+icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner/icon.svg
 category: bitcoin
 version: "1.5.3"
 port: 3000
@@ -24,7 +24,7 @@ submission: https://github.com/ArcherBullseye/ubiquitous-octo-funicular
 repo: https://github.com/ArcherBullseye/ubiquitous-octo-funicular
 support: https://github.com/ArcherBullseye/ubiquitous-octo-funicular/issues
 gallery:
-  - https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-solar-miner/icon.svg
+  - https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner/icon.svg
 releaseNotes: >-
   v1.5.3: Add show/hide eye button to all sensitive fields (Solis API
   secret, dehumidifier local key, Luxor API key, Telegram bot token).
