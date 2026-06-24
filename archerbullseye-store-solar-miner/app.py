@@ -23,6 +23,8 @@ from dehumidifier import DehumidifierClient
 
 load_dotenv()
 
+APP_VERSION = "1.5.5"
+
 app = Flask(__name__)
 
 state = {
@@ -878,6 +880,7 @@ def api_status():
     snapshot["eod_soc_target"]         = float(settings.get("eod_soc_target") or 80.0)
     snapshot["eod_soc_target_enabled"] = bool(settings.get("eod_soc_target_enabled", False))
     snapshot["today_sats"] = (snapshot.get("pool") or {}).get("sats_today", 0) or 0
+    snapshot["app_version"] = APP_VERSION
     return jsonify(snapshot)
 
 
