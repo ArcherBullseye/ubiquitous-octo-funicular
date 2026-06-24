@@ -29,5 +29,5 @@ jobs:
           context: ./archerbullseye-store-solar-miner
           push: true
           tags: |
-            ghcr.io/archerbullseye/solar-miner:latest
-            ghcr.io/archerbullseye/solar-miner:${{ github.sha }}
+            ghcr.io/archerbullseye/solar-miner-app:latest
+            ghcr.io/archerbullseye/solar-miner-app:${{ github.sha }}
