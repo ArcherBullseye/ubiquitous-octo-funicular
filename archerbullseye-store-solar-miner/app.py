@@ -13,7 +13,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="urllib3")
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
 
-from db import init_db, get_settings, update_settings, save_reading, get_recent_readings, update_pv_efficiency, get_pv_efficiency, get_pv_efficiency_detail, add_daily_sats_delta, get_daily_sats, get_today_sats, reset_pv_efficiency, get_hourly_load_profile
+from db import init_db, get_settings, update_settings, save_reading, get_recent_readings, update_pv_efficiency, get_pv_efficiency, get_pv_efficiency_detail, reset_pv_efficiency, get_hourly_load_profile
 from solis_api import SolisClient, SolisApiError, parse_power_and_soc
 from luxos_api import LuxOsClient, LuxOsError
 from weather import get_weather, parse_weather, geocode as do_geocode
@@ -76,6 +76,11 @@ notify_state = {
     "sats_milestone_last": 0,
     "prev_sunny_day_notified": False,
 }
+
+
+# Cache for Luxor daily revenue history — refreshed once per UTC day
+_revenue_cache: dict = {"utc_date": None, "rows": []}
+_revenue_lock = threading.Lock()
 
 
 # ── Session helpers ──────────────────────────────────────────────
@@ -305,7 +310,7 @@ def _send_notifications(settings: dict, soc: Optional[float], actually_mining: b
         if local_now.weekday() == recap_day and local_now.hour == recap_hour:
             if notify_state["last_weekly_recap_date"] != today:
                 notify_state["last_weekly_recap_date"] = today
-                rows = get_daily_sats(7)
+                rows = _fetch_daily_sats_rows(7)
                 if rows:
                     total = sum(r["sats"] for r in rows)
                     lines = "\n".join(
@@ -423,6 +428,7 @@ def control_loop() -> None:
             smart_soc_on        = float(settings.get("smart_soc_on_threshold") or 60.0)
             smart_soc_off       = float(settings.get("smart_soc_off_threshold") or 55.0)
             sunny_hours_threshold = float(settings.get("sunny_hours_threshold") or 3.0)
+            smart_min_pv_w      = float(settings.get("smart_min_pv_w") or 1000.0)
             api_fail_action     = settings.get("api_fail_action", "stop")
             api_fail_cycles     = int(settings.get("api_fail_cycles") or 3)
 
@@ -579,7 +585,14 @@ def control_loop() -> None:
 
                     # Hysteresis: smart start uses single threshold; normal mode uses on/off buffer
                     if smart_active:
-                        desired_mining = soc >= effective_soc_on
+                        if actually_mining:
+                            # Already running — keep going based on SOC alone
+                            desired_mining = soc >= effective_soc_on
+                        else:
+                            # Starting — also require minimum PV input so we don't
+                            # start at midnight just because a sunny day is forecast
+                            pv_gate_ok = readings["input_power_w"] >= smart_min_pv_w
+                            desired_mining = soc >= effective_soc_on and pv_gate_ok
                     elif actually_mining:
                         desired_mining = soc >= effective_soc_off
                     else:
@@ -749,6 +762,7 @@ def control_loop() -> None:
                 state["last_updated"]      = now_str
                 state["effective_soc_on"]  = effective_soc_on
                 state["smart_start_active"] = smart_active
+                state["smart_min_pv_w"]    = smart_min_pv_w
                 state["cycle"]             = cycle_num
                 state["error"]             = error_str
                 state["action"]            = action
@@ -822,15 +836,8 @@ def _fetch_btc_price() -> Optional[float]:
 
 
 def pool_loop() -> None:
-    # Luxor only exposes a rolling 24h revenue window, not per-calendar-day data.
-    # We track positive deltas between polls to accumulate true daily earnings.
-    # On startup we skip the first reading to avoid crediting the entire 24h
-    # backlog as today's earnings.
-    prev_sats = None  # type: Optional[int]
-
     while True:
         try:
-            # Fetch BTC price
             price = _fetch_btc_price()
             if price:
                 with state_lock:
@@ -844,19 +851,9 @@ def pool_loop() -> None:
                 client = LuxPoolClient(api_key=api_key, username=username, api_url=api_url)
                 summary = client.get_summary()
                 if summary is not None:
-                    now_str = datetime.now(timezone.utc).isoformat()
                     with state_lock:
                         state["pool"] = summary
-                        state["pool_last_updated"] = now_str
-                    sats = summary.get("sats_today", 0) or 0
-                    if prev_sats is not None:
-                        delta = sats - prev_sats
-                        if delta > 0:
-                            with state_lock:
-                                tz_offset = int((state.get("weather") or {}).get("utc_offset_seconds") or 0)
-                            local_date = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).strftime("%Y-%m-%d")
-                            add_daily_sats_delta(local_date, delta)
-                    prev_sats = sats
+                        state["pool_last_updated"] = datetime.now(timezone.utc).isoformat()
         except Exception as e:
             print(f"Pool loop error: {e}")
         time.sleep(300)  # refresh every 5 minutes
@@ -880,8 +877,7 @@ def api_status():
     snapshot["pv_peak_kw"] = float(settings.get("pv_peak_kw") or 0.0)
     snapshot["eod_soc_target"]         = float(settings.get("eod_soc_target") or 80.0)
     snapshot["eod_soc_target_enabled"] = bool(settings.get("eod_soc_target_enabled", False))
-    local_date = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).strftime("%Y-%m-%d")
-    snapshot["today_sats"]             = get_today_sats(local_date)
+    snapshot["today_sats"] = (snapshot.get("pool") or {}).get("sats_today", 0) or 0
     return jsonify(snapshot)
 
 
@@ -892,10 +888,51 @@ def api_history():
     return jsonify(rows)
 
 
+def _fetch_daily_sats_rows(days: int) -> list[dict]:
+    """
+    Returns [{date, sats}] for the last `days` calendar days (local time).
+    Historical days come from Luxor's revenue API (cached per UTC day).
+    Today uses the live rolling-24h sats_today from the pool summary.
+    """
+    settings = get_settings()
+    api_key  = settings.get("lux_pool_api_key", "")
+    username = settings.get("lux_pool_username", "")
+    api_url  = settings.get("lux_pool_api_url", "")
+
+    with state_lock:
+        tz_offset  = int((state.get("weather") or {}).get("utc_offset_seconds") or 0)
+        today_live = (state.get("pool") or {}).get("sats_today", 0) or 0
+
+    local_today = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).date()
+    today_str   = local_today.isoformat()
+
+    history_by_date: dict = {}
+    if api_key and username:
+        utc_date = datetime.now(timezone.utc).date()
+        with _revenue_lock:
+            if _revenue_cache["utc_date"] != utc_date:
+                try:
+                    client = LuxPoolClient(api_key=api_key, username=username, api_url=api_url)
+                    start = (local_today - timedelta(days=days)).isoformat()
+                    _revenue_cache["rows"]     = client.get_revenue_history(start, today_str)
+                    _revenue_cache["utc_date"] = utc_date
+                except Exception as e:
+                    print(f"Revenue history fetch error: {e}")
+            history_by_date = {r["date"]: r["sats"] for r in _revenue_cache["rows"]}
+
+    history_by_date[today_str] = today_live
+
+    return [
+        {"date": (local_today - timedelta(days=i)).isoformat(),
+         "sats": history_by_date.get((local_today - timedelta(days=i)).isoformat(), 0)}
+        for i in range(days - 1, -1, -1)
+    ]
+
+
 @app.route("/api/daily_sats")
 def api_daily_sats():
     days = int(request.args.get("days", 7))
-    return jsonify(get_daily_sats(days))
+    return jsonify(_fetch_daily_sats_rows(days))
 
 
 @app.route("/api/dehum/test")
@@ -984,7 +1021,7 @@ def api_post_settings():
     numeric_keys = [
         "poll_interval_seconds", "soc_on_threshold", "soc_off_threshold",
         "smart_soc_on_threshold", "smart_soc_off_threshold",
-        "sunny_hours_threshold", "radiation_threshold_wm2",
+        "sunny_hours_threshold", "radiation_threshold_wm2", "smart_min_pv_w",
         "location_lat", "location_lon",
         "battery_capacity_kwh", "pv_peak_kw", "miner_power_w",
         "eod_soc_target", "dehum_excess_threshold_w", "dehum_version",
