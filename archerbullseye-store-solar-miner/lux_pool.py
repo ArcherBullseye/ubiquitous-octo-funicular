@@ -94,3 +94,30 @@ class LuxPoolClient:
             "valid_shares": 0,
             "stale_shares": 0,
         }
+
+    def get_revenue_history(self, start_date: str, end_date: str) -> list[dict]:
+        """
+        Returns [{date, sats}] from /pool/revenue/BTC for the given date range.
+        Data is updated once daily at 05:00 UTC, so today's entry is absent or zero.
+        """
+        data = self._get("/pool/revenue/BTC", {
+            "subaccount_names": self.username,
+            "start_date": start_date,
+            "end_date": end_date,
+        })
+        if not data:
+            return []
+        result = []
+        for item in data.get("revenue", []):
+            date_str = (item.get("date_time") or "")[:10]
+            if not date_str:
+                continue
+            rev = item.get("revenue", {})
+            if isinstance(rev, dict):
+                if rev.get("currency_type") == "BTC" and rev.get("revenue_type") == "MINING":
+                    sats = int(float(rev.get("revenue", 0)) * 1e8)
+                    result.append({"date": date_str, "sats": sats})
+            elif item.get("currency_type") == "BTC" and item.get("revenue_type") == "MINING":
+                sats = int(float(item.get("revenue", 0)) * 1e8)
+                result.append({"date": date_str, "sats": sats})
+        return result

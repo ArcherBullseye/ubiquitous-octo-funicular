@@ -20,6 +20,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "smart_soc_off_threshold": 55.0,
     "sunny_hours_threshold": 3.0,
     "radiation_threshold_wm2": 300.0,
+    "smart_min_pv_w": 1000.0,
     "location_lat": 0.0,
     "location_lon": 0.0,
     "location_name": "",

@@ -572,6 +572,7 @@
       <span class="badge badge-gray" id="smart-badge">Idle</span>
       <div class="card-sub" style="margin-top:8px;" id="smart-sunny">—</div>
       <div class="card-sub" id="smart-threshold">SOC ON: —</div>
+      <div class="card-sub" id="smart-pv-gate">PV input: —</div>
       <div class="card-sub" id="eod-projection" style="display:none;margin-top:4px;font-size:11px;"></div>
     </div>
 
@@ -854,6 +855,13 @@
               <label>Radiation Threshold (W/m²)</label>
               <input type="number" id="s-radiation_threshold_wm2" step="10" min="0" />
               <div class="form-hint">Counts as a "sunny hour" above this level.</div>
+            </div>
+          </div>
+          <div class="form-two-col">
+            <div class="form-group">
+              <label>Min PV Input to Start (W)</label>
+              <input type="number" id="s-smart_min_pv_w" step="100" min="0" />
+              <div class="form-hint">Smart Start won't turn on the miner until live PV input reaches this level — prevents midnight starts on sunny-day forecasts.</div>
             </div>
           </div>
           <div class="form-group" style="margin-top:.5em;">
@@ -1442,6 +1450,17 @@
       const sunny = wx ? wx.remaining_sunny_hours : null;
       el('smart-sunny').textContent = 'Sunny hours remaining: ' + (sunny != null ? sunny : '—');
       el('smart-threshold').textContent = 'Effective SOC ON: ' + (s.effective_soc_on != null ? s.effective_soc_on.toFixed(1) + '%' : '—');
+      const pvGateEl = el('smart-pv-gate');
+      const curPv = (s.readings && s.readings.input_power_w != null) ? s.readings.input_power_w : null;
+      const minPv = s.smart_min_pv_w || 1000;
+      if (curPv != null) {
+        const pvMet = curPv >= minPv;
+        pvGateEl.textContent = 'PV input: ' + Math.round(curPv).toLocaleString() + ' W / ' + Math.round(minPv).toLocaleString() + ' W min';
+        pvGateEl.style.color = pvMet ? 'var(--green)' : 'var(--muted)';
+      } else {
+        pvGateEl.textContent = 'PV input: — / ' + Math.round(minPv).toLocaleString() + ' W min';
+        pvGateEl.style.color = '';
+      }
 
       const eodEl = el('eod-projection');
       const eodTarget  = s.eod_soc_target || 0;
@@ -1600,7 +1619,7 @@
       const numKeys  = [
         'poll_interval_seconds','soc_on_threshold','soc_off_threshold',
         'smart_soc_on_threshold','smart_soc_off_threshold',
-        'sunny_hours_threshold','radiation_threshold_wm2',
+        'sunny_hours_threshold','radiation_threshold_wm2','smart_min_pv_w',
         'location_lat','location_lon',
         'battery_capacity_kwh','pv_peak_kw','miner_power_w',
         'eod_soc_target', 'dehum_excess_threshold_w', 'dehum_version',
@@ -1670,6 +1689,7 @@
       smart_soc_on_threshold:  Number(el('s-smart_soc_on_threshold').value),
       smart_soc_off_threshold: Number(el('s-smart_soc_off_threshold').value),
       sunny_hours_threshold:   Number(el('s-sunny_hours_threshold').value),
+      smart_min_pv_w:          Number(el('s-smart_min_pv_w').value),
       radiation_threshold_wm2: Number(el('s-radiation_threshold_wm2').value),
       eod_soc_target_enabled:  el('s-eod_soc_target_enabled').checked,
       eod_soc_target:          Number(el('s-eod_soc_target').value) || 80,
