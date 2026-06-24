@@ -4,7 +4,7 @@ name: Resell Tracker
 tagline: Track retail arbitrage buys, sells, and profits
 icon: https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 category: Finance
-version: "1.2.12"
+version: "1.2.13"
 port: 3001
 description: >-
   Resell Tracker is a retail arbitrage management app that runs entirely on your Umbrel home server.
@@ -45,7 +45,7 @@ support: https://github.com/ArcherBullseye/resell-tracker/issues
 gallery:
   - https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 releaseNotes: >-
-  v1.2.12: Lowe's session cookie injection — paste real browser cookies to bypass Akamai bot detection. Includes drag-to-bookmarklet for easy cookie capture.
+  v1.2.13: New "Import from Browser" for Lowe's deals — use the bookmarklet on a Lowe's deals page to grab the product data from your own browser, then paste it into the Scanner to bypass Akamai bot blocking. Replaces the cookie-injection approach.
 dependencies: []
 path: ""
 defaultUsername: ""
