@@ -4,7 +4,7 @@ name: Resell Tracker
 tagline: Track retail arbitrage buys, sells, and profits
 icon: https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 category: Finance
-version: "1.2.4"
+version: "1.2.5"
 port: 3001
 description: >-
   Resell Tracker is a retail arbitrage management app that runs entirely on your Umbrel home server.
@@ -45,7 +45,7 @@ support: https://github.com/ArcherBullseye/resell-tracker/issues
 gallery:
   - https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 releaseNotes: >-
-  v1.2.4: Scheduled scanner filters with Telegram alerts, Puppeteer-based Lowe's scraper (bypasses bot block), settings subcategories (API Keys / Telegram).
+  v1.2.5: Scheduled scanner filters with Telegram alerts, Puppeteer-based Lowe's scraper (bypasses bot block), settings subcategories (API Keys / Telegram).
 dependencies: []
 path: ""
 defaultUsername: ""
