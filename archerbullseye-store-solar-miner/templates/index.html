@@ -569,7 +569,11 @@
 
     <div class="card">
       <div class="card-label">🧠 Smart</div>
-      <span class="badge badge-gray" id="smart-badge">Idle</span>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <span class="badge badge-gray" id="smart-badge">Idle</span>
+        <button id="smart-hold-btn" data-held="0" onclick="toggleSmartHold()"
+          style="padding:2px 9px;font-size:10px;font-weight:600;border-radius:5px;background:var(--border);color:var(--text);">Hold</button>
+      </div>
       <div class="card-sub" style="margin-top:8px;" id="smart-sunny">—</div>
       <div class="card-sub" id="smart-threshold">SOC ON: —</div>
       <div class="card-sub" id="smart-pv-gate">PV input: —</div>
@@ -1444,22 +1448,46 @@
 
       // Smart start
       const smartBadge = el('smart-badge');
-      smartBadge.textContent = s.smart_start_active ? 'Active' : 'Idle';
-      smartBadge.className = 'badge ' + (s.smart_start_active ? 'badge-green' : 'badge-gray');
+      const holdBtn = el('smart-hold-btn');
+      if (s.smart_hold_active) {
+        smartBadge.textContent = 'Held';
+        smartBadge.className = 'badge badge-amber';
+        holdBtn.textContent = 'Resume';
+        holdBtn.dataset.held = '1';
+        holdBtn.style.background = 'var(--amber)';
+        holdBtn.style.color = '#000';
+      } else {
+        smartBadge.textContent = s.smart_start_active ? 'Active' : 'Idle';
+        smartBadge.className = 'badge ' + (s.smart_start_active ? 'badge-green' : 'badge-gray');
+        holdBtn.textContent = 'Hold';
+        holdBtn.dataset.held = '0';
+        holdBtn.style.background = 'var(--border)';
+        holdBtn.style.color = 'var(--text)';
+      }
+
       const wx = s.weather;
       const sunny = wx ? wx.remaining_sunny_hours : null;
-      el('smart-sunny').textContent = 'Sunny hours remaining: ' + (sunny != null ? sunny : '—');
-      el('smart-threshold').textContent = 'Effective SOC ON: ' + (s.effective_soc_on != null ? s.effective_soc_on.toFixed(1) + '%' : '—');
+      const sunnyThresh = s.sunny_hours_threshold || 3;
+      const sunnyEl = el('smart-sunny');
+      sunnyEl.textContent = 'Sunny hours remaining: ' + (sunny != null ? sunny : '—');
+      sunnyEl.style.color = (sunny != null && sunny >= sunnyThresh) ? 'var(--green)' : 'var(--muted)';
+
+      const socThreshEl = el('smart-threshold');
+      socThreshEl.textContent = 'Effective SOC ON: ' + (s.effective_soc_on != null ? s.effective_soc_on.toFixed(1) + '%' : '—');
+      const curSoc = (s.readings && s.readings.soc != null) ? s.readings.soc : null;
+      socThreshEl.style.color = (curSoc != null && s.effective_soc_on != null && curSoc >= s.effective_soc_on) ? 'var(--green)' : 'var(--muted)';
+
       const pvGateEl = el('smart-pv-gate');
       const curPv = (s.readings && s.readings.input_power_w != null) ? s.readings.input_power_w : null;
       const minPv = s.smart_min_pv_w || 1000;
+      const minPvKw = (minPv / 1000).toFixed(1);
       if (curPv != null) {
         const pvMet = curPv >= minPv;
-        pvGateEl.textContent = 'PV input: ' + Math.round(curPv).toLocaleString() + ' W / ' + Math.round(minPv).toLocaleString() + ' W min';
+        pvGateEl.textContent = 'PV input: ' + (curPv / 1000).toFixed(1) + ' / ' + minPvKw + ' kW min';
         pvGateEl.style.color = pvMet ? 'var(--green)' : 'var(--muted)';
       } else {
-        pvGateEl.textContent = 'PV input: — / ' + Math.round(minPv).toLocaleString() + ' W min';
-        pvGateEl.style.color = '';
+        pvGateEl.textContent = 'PV input: — / ' + minPvKw + ' kW min';
+        pvGateEl.style.color = 'var(--muted)';
       }
 
       const eodEl = el('eod-projection');
@@ -1966,6 +1994,19 @@
         if (attempts >= maxAttempts) { clearInterval(_fastPoll); _fastPoll = null; }
       }
     }, 2000);
+  }
+
+  async function toggleSmartHold() {
+    const held = el('smart-hold-btn').dataset.held === '1';
+    try {
+      const resp = await fetch('/api/smart/hold', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({hold: !held}),
+      });
+      if (!resp.ok) { const d = await resp.json(); alert('Error: ' + (d.error || resp.status)); return; }
+      await refresh();
+    } catch(e) { alert('Error: ' + e); }
   }
 
   async function minerStart() {

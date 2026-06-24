@@ -23,7 +23,7 @@ from dehumidifier import DehumidifierClient
 
 load_dotenv()
 
-APP_VERSION = "1.5.5"
+APP_VERSION = "1.5.6"
 
 app = Flask(__name__)
 
@@ -38,6 +38,7 @@ state = {
     "pool_last_updated": None,
     "effective_soc_on": 80.0,
     "smart_start_active": False,
+    "smart_hold_active": False,
     "cycle": 0,
     "error": None,
     "action": "none",
@@ -442,11 +443,20 @@ def control_loop() -> None:
             pv_peak_kw   = float(settings.get("pv_peak_kw") or 0.0)
             miner_power_w = float(settings.get("miner_power_w") or 0.0)
 
+            # Smart Start manual hold — paused until local midnight. While the
+            # stored hold date matches today's local date, Smart Start is off and
+            # the miner reverts to normal-mode thresholds. Rolls off automatically
+            # after midnight when the local date advances.
+            _hold_tz = int((current_weather or {}).get("utc_offset_seconds") or 0)
+            _local_today = (datetime.now(timezone.utc) + timedelta(seconds=_hold_tz)).date().isoformat()
+            smart_hold_active = bool(settings.get("smart_hold_date")) and \
+                settings.get("smart_hold_date") == _local_today
+
             smart_active = False
             effective_soc_on  = soc_on
             effective_soc_off = soc_off
 
-            if smart_start_enabled and current_weather is not None:
+            if smart_start_enabled and not smart_hold_active and current_weather is not None:
                 hourly = current_weather.get("hourly") or []
                 if pv_peak_kw > 0 and miner_power_w > 0:
                     # Learned efficiency model: predict actual output per forecast hour
@@ -764,6 +774,7 @@ def control_loop() -> None:
                 state["last_updated"]      = now_str
                 state["effective_soc_on"]  = effective_soc_on
                 state["smart_start_active"] = smart_active
+                state["smart_hold_active"]  = smart_hold_active
                 state["smart_min_pv_w"]    = smart_min_pv_w
                 state["cycle"]             = cycle_num
                 state["error"]             = error_str
@@ -880,6 +891,12 @@ def api_status():
     snapshot["eod_soc_target"]         = float(settings.get("eod_soc_target") or 80.0)
     snapshot["eod_soc_target_enabled"] = bool(settings.get("eod_soc_target_enabled", False))
     snapshot["today_sats"] = (snapshot.get("pool") or {}).get("sats_today", 0) or 0
+    snapshot["sunny_hours_threshold"] = float(settings.get("sunny_hours_threshold") or 3.0)
+    # Derive hold state from settings here too (not just the control-loop value) so
+    # the dashboard reflects a Hold/Resume click immediately, not on the next poll.
+    local_today = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).date().isoformat()
+    snapshot["smart_hold_active"] = bool(settings.get("smart_hold_date")) and \
+        settings.get("smart_hold_date") == local_today
     snapshot["app_version"] = APP_VERSION
     return jsonify(snapshot)
 
@@ -1108,6 +1125,25 @@ def api_miner_stop():
         return jsonify({"error": str(e)}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/smart/hold", methods=["POST"])
+def api_smart_hold():
+    """Pause/resume Smart Start until local midnight.
+
+    hold=true stores today's local date; Smart Start stays off (miner reverts to
+    normal thresholds) until the local date rolls over at midnight. hold=false
+    clears it immediately.
+    """
+    data = request.get_json(force=True) or {}
+    hold = bool(data.get("hold"))
+    with state_lock:
+        tz_offset = int((state.get("weather") or {}).get("utc_offset_seconds") or 0)
+    local_today = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).date().isoformat()
+    update_settings({"smart_hold_date": local_today if hold else ""})
+    with state_lock:
+        state["smart_hold_active"] = hold
+    return jsonify({"ok": True, "hold": hold})
 
 
 @app.route("/api/miner/quick")
