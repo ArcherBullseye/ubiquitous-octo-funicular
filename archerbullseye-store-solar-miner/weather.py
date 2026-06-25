@@ -99,7 +99,7 @@ def parse_weather(data: Dict[str, Any], radiation_threshold: float = 300.0) -> D
             if (rad or 0) > radiation_threshold:
                 remaining_sunny_hours += 1
 
-    # Build next 8 hourly slots from current hour onward
+    # Build next 10 hourly slots from current hour onward
     hourly_forecast: List[Dict[str, Any]] = []
     for t, rad, code, temp in zip(h_times, h_radiation, h_codes, h_temps):
         slot_hour_prefix = t[:13]
@@ -116,7 +116,7 @@ def parse_weather(data: Dict[str, Any], radiation_threshold: float = 300.0) -> D
                 "desc": slot_desc,
                 "temp_f": float(temp or 0.0),
             })
-            if len(hourly_forecast) >= 8:
+            if len(hourly_forecast) >= 10:
                 break
 
     return {
