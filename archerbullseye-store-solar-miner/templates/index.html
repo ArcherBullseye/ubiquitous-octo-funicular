@@ -569,7 +569,7 @@
 
     <div class="card">
       <div class="card-label">🧠 Smart</div>
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
         <span class="badge badge-gray" id="smart-badge">Idle</span>
         <button id="smart-hold-btn" data-held="0" onclick="toggleSmartHold()"
           style="padding:2px 9px;font-size:10px;font-weight:600;border-radius:5px;background:var(--border);color:var(--text);">Hold</button>
@@ -658,7 +658,7 @@
       <div class="chart-wrap"><canvas id="socChart"></canvas></div>
     </div>
     <div class="card chart-card">
-      <h3>Daily Earnings (7d)</h3>
+      <h3>Daily Earnings (8d)</h3>
       <div class="chart-wrap"><canvas id="dailySatsChart"></canvas></div>
     </div>
   </div>
@@ -1316,7 +1316,7 @@
 
   async function loadDailySats() {
     try {
-      const resp = await fetch('/api/daily_sats?days=7');
+      const resp = await fetch('/api/daily_sats?days=8&include_today=0');
       if (!resp.ok) return;
       const rows = await resp.json();
       if (!rows.length) return;
