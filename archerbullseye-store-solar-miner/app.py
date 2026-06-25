@@ -23,7 +23,7 @@ from dehumidifier import DehumidifierClient
 
 load_dotenv()
 
-APP_VERSION = "1.5.6"
+APP_VERSION = "1.5.7"
 
 app = Flask(__name__)
 
@@ -908,11 +908,14 @@ def api_history():
     return jsonify(rows)
 
 
-def _fetch_daily_sats_rows(days: int) -> list[dict]:
+def _fetch_daily_sats_rows(days: int, include_today: bool = True) -> list[dict]:
     """
-    Returns [{date, sats}] for the last `days` calendar days (local time).
-    Historical days come from Luxor's revenue API (cached per UTC day).
-    Today uses the live rolling-24h sats_today from the pool summary.
+    Returns [{date, sats}] for `days` calendar days (local time).
+    Historical days come from Luxor's settled revenue API (cached per UTC day).
+    When include_today is True the most recent bar is today and uses the live
+    rolling-24h sats_today from the pool summary; when False the most recent bar
+    is yesterday and every bar comes from the settled revenue API (avoids the
+    rolling-24h window bleeding yesterday's earnings onto today's bar).
     """
     settings = get_settings()
     api_key  = settings.get("lux_pool_api_key", "")
@@ -925,6 +928,8 @@ def _fetch_daily_sats_rows(days: int) -> list[dict]:
 
     local_today = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).date()
     today_str   = local_today.isoformat()
+    # Most recent bar: today, or yesterday when today is excluded.
+    last_day    = local_today if include_today else local_today - timedelta(days=1)
 
     history_by_date: dict = {}
     if api_key and username:
@@ -933,18 +938,19 @@ def _fetch_daily_sats_rows(days: int) -> list[dict]:
             if _revenue_cache["utc_date"] != utc_date:
                 try:
                     client = LuxPoolClient(api_key=api_key, username=username, api_url=api_url)
-                    start = (local_today - timedelta(days=days)).isoformat()
+                    start = (local_today - timedelta(days=days + 1)).isoformat()
                     _revenue_cache["rows"]     = client.get_revenue_history(start, today_str)
                     _revenue_cache["utc_date"] = utc_date
                 except Exception as e:
                     print(f"Revenue history fetch error: {e}")
             history_by_date = {r["date"]: r["sats"] for r in _revenue_cache["rows"]}
 
-    history_by_date[today_str] = today_live
+    if include_today:
+        history_by_date[today_str] = today_live
 
     return [
-        {"date": (local_today - timedelta(days=i)).isoformat(),
-         "sats": history_by_date.get((local_today - timedelta(days=i)).isoformat(), 0)}
+        {"date": (last_day - timedelta(days=i)).isoformat(),
+         "sats": history_by_date.get((last_day - timedelta(days=i)).isoformat(), 0)}
         for i in range(days - 1, -1, -1)
     ]
 
@@ -952,7 +958,8 @@ def _fetch_daily_sats_rows(days: int) -> list[dict]:
 @app.route("/api/daily_sats")
 def api_daily_sats():
     days = int(request.args.get("days", 7))
-    return jsonify(_fetch_daily_sats_rows(days))
+    include_today = request.args.get("include_today", "1") != "0"
+    return jsonify(_fetch_daily_sats_rows(days, include_today))
 
 
 @app.route("/api/dehum/test")
