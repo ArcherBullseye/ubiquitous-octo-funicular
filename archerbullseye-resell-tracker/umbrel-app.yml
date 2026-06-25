@@ -4,7 +4,7 @@ name: Resell Tracker
 tagline: Track retail arbitrage buys, sells, and profits
 icon: https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 category: Finance
-version: "1.2.15"
+version: "1.2.16"
 port: 3001
 description: >-
   Resell Tracker is a retail arbitrage management app that runs entirely on your Umbrel home server.
@@ -45,7 +45,7 @@ support: https://github.com/ArcherBullseye/resell-tracker/issues
 gallery:
   - https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 releaseNotes: >-
-  v1.2.15: "Grab Lowe's Deals" bookmarklet now pages through the whole category in one click (no more page-by-page). After import, "Compare all to eBay" checks each deal against its eBay sold average, estimates profit, and sorts the best flips first. Groundwork for multi-retailer (Home Depot next).
+  v1.2.16: Adds Home Depot to the scanner. Pick the Home Depot tab and use the new "Grab Home Depot Deals" bookmarklet — it pages through a clearance/Special Values category via Home Depot's product API with real discounts (current vs original price), then imports + compares to eBay like Lowe's.
 dependencies: []
 path: ""
 defaultUsername: ""
