@@ -4,7 +4,7 @@ name: Resell Tracker
 tagline: Track retail arbitrage buys, sells, and profits
 icon: https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 category: Finance
-version: "1.2.17"
+version: "1.2.18"
 port: 3001
 description: >-
   Resell Tracker is a retail arbitrage management app that runs entirely on your Umbrel home server.
@@ -45,7 +45,7 @@ support: https://github.com/ArcherBullseye/resell-tracker/issues
 gallery:
   - https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 releaseNotes: >-
-  v1.2.17: Adds a "Test server access" tool (Home Depot tab → Automated scanning) — paste your Home Depot cookies (Cookie-Editor JSON export) and the server checks whether it can reach Home Depot directly. This is the gate toward scheduled, hands-off scanning.
+  v1.2.18: Smarter Home Depot server-access test — it now warms up on the homepage, then checks the real product API (searchModel) instead of full-page rendering, and reports detailed diagnostics (HTTP codes, page title, and whether your cookie export is missing core Akamai cookies). Updated cookie-export instructions for a complete session.
 dependencies: []
 path: ""
 defaultUsername: ""
