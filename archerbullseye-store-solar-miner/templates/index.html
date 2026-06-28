@@ -1444,7 +1444,13 @@
         mEl.textContent = '?';
         mEl.style.color = 'var(--muted)';
       }
-      el('miner-threshold').textContent = 'SOC ON: ' + (s.effective_soc_on != null ? s.effective_soc_on.toFixed(1) + '%' : '—');
+      if (s.miner_hold_active) {
+        el('miner-threshold').textContent = '⏸ Disabled until midnight';
+        el('miner-threshold').style.color = 'var(--amber)';
+      } else {
+        el('miner-threshold').textContent = 'SOC ON: ' + (s.effective_soc_on != null ? s.effective_soc_on.toFixed(1) + '%' : '—');
+        el('miner-threshold').style.color = '';
+      }
 
       // Smart start
       const smartBadge = el('smart-badge');

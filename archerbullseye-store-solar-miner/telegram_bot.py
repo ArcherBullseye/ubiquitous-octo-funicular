@@ -20,6 +20,38 @@ class TelegramBot:
         except Exception:
             return False
 
+    def get_updates(self, offset: Optional[int] = None, timeout: int = 25) -> list:
+        """Long-poll for incoming updates. Returns a (possibly empty) list."""
+        if not self.token:
+            return []
+        params = {"timeout": timeout}
+        if offset is not None:
+            params["offset"] = offset
+        try:
+            resp = requests.get(
+                f"https://api.telegram.org/bot{self.token}/getUpdates",
+                params=params,
+                timeout=timeout + 10,
+            )
+            if not resp.ok:
+                return []
+            return resp.json().get("result", []) or []
+        except Exception:
+            return []
+
+    def delete_webhook(self) -> None:
+        """Remove any configured webhook so getUpdates long-polling works
+        (a set webhook makes getUpdates return HTTP 409)."""
+        if not self.token:
+            return
+        try:
+            requests.get(
+                f"https://api.telegram.org/bot{self.token}/deleteWebhook",
+                timeout=10,
+            )
+        except Exception:
+            pass
+
     def validate(self) -> str:
         """Returns bot @username on success, error string on failure."""
         if not self.token:
