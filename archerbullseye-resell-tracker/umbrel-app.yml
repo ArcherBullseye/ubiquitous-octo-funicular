@@ -1,10 +1,9 @@
-manifestVersion: 1.1
+manifestVersion: 1
 id: resell-tracker
-disabled: false
 name: Resell Tracker
 tagline: Track retail arbitrage buys, sells, and profits
 icon: https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
-category: Finance
+category: finance
 version: "1.3.2"
 port: 3000
 description: >-
@@ -13,30 +12,30 @@ description: >-
 
   Features:
 
-  • Barcode / UPC lookup to auto-fill product name and image
+  - Barcode / UPC lookup to auto-fill product name and image
 
-  • eBay sold listings price data (low, average, high) with recent sales
+  - eBay sold listings price data (low, average, high) with recent sales
 
-  • Record buy price and buy date for every item
+  - Record buy price and buy date for every item
 
-  • Record sell price, sell date, shipping cost, and selling platform
+  - Record sell price, sell date, shipping cost, and selling platform
 
-  • Platform fee calculation for eBay, Mercari, Poshmark, Facebook Marketplace, and more
+  - Platform fee calculation for eBay, Mercari, Poshmark, Facebook Marketplace, and more
 
-  • Live net profit preview before saving
+  - Live net profit preview before saving
 
-  • Dashboard with total invested, total revenue, and net profit across all sales
+  - Dashboard with total invested, total revenue, and net profit across all sales
 
-  • Filter by In Inventory vs. Sold
+  - Filter by In Inventory vs. Sold
 
-  • All data stored locally in SQLite — no cloud required
+  - All data stored locally in SQLite -- no cloud required
 
 
-  API keys required for full functionality (see README):
+  API keys required for full functionality:
 
-  • eBay Developer App ID (free) — for sold listing price data
+  - eBay Developer App ID (free) -- for sold listing price data
 
-  • UPC Item DB key (optional, free tier included) — for barcode lookup
+  - UPC Item DB key (optional, free tier included) -- for barcode lookup
 
 developer: ArcherBullseye
 website: https://github.com/ArcherBullseye/resell-tracker
@@ -45,6 +44,9 @@ submission: https://github.com/ArcherBullseye/resell-tracker
 repo: https://github.com/ArcherBullseye/resell-tracker
 support: https://github.com/ArcherBullseye/resell-tracker/issues
 dependencies: []
-gallery: []
 releaseNotes: >-
-  v1.3.2: Browser extension for free retailer scanning (Lowe's, TSC, HD, Walmart) — 1-click scan from clearance pages, products sent directly to your Resell Tracker over LAN with no cloud required. TSC Apify integration wired (store number field, keyword scan). Shelf badge now hidden on sold items (still editable in the Edit modal). Server-side import buffer with pending-import polling so products auto-appear when you return to the scanner tab.
+  v1.3.2: Browser extension for free retailer scanning, TSC Apify integration,
+  shelf badge hidden on sold items, server-side import buffer with auto-polling.
+path: ""
+defaultUsername: ""
+defaultPassword: ""
