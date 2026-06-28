@@ -4,7 +4,7 @@ name: Solar Miner
 tagline: Control your Bitcoin miner with solar power
 icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner/icon.svg
 category: bitcoin
-version: "1.5.8"
+version: "1.5.9"
 port: 3000
 description: >-
   Monitor your Solis solar inverter and automatically control your LuxOS
@@ -26,6 +26,13 @@ support: https://github.com/ArcherBullseye/ubiquitous-octo-funicular/issues
 gallery:
   - https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner/icon.svg
 releaseNotes: >-
+  v1.5.9: Telegram bot now accepts commands — /startMiner, /stopMiner, and
+  /info. /stopMiner disables the miner until local midnight (or until you
+  start it again from Telegram or the dashboard); on/off confirmations are
+  sent once the controller verifies the miner actually changed state. Only
+  the configured chat can issue commands.
+
+
   v1.5.8: Weather box now shows a scrollable 10-hour forecast (up from 5)
   while keeping the same card size.
 

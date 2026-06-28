@@ -22,6 +22,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "radiation_threshold_wm2": 300.0,
     "smart_min_pv_w": 1000.0,
     "smart_hold_date": "",  # local date (YYYY-MM-DD) Smart Start is paused until midnight
+    "miner_hold_date": "",  # local date (YYYY-MM-DD) miner is force-stopped until midnight
     "location_lat": 0.0,
     "location_lon": 0.0,
     "location_name": "",

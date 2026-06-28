@@ -23,7 +23,7 @@ from dehumidifier import DehumidifierClient
 
 load_dotenv()
 
-APP_VERSION = "1.5.8"
+APP_VERSION = "1.5.9"
 
 app = Flask(__name__)
 
@@ -39,6 +39,8 @@ state = {
     "effective_soc_on": 80.0,
     "smart_start_active": False,
     "smart_hold_active": False,
+    "miner_hold_active": False,
+    "miner_cmd_pending": None,
     "cycle": 0,
     "error": None,
     "action": "none",
@@ -169,6 +171,62 @@ def _get_bot(settings: dict) -> Optional[TelegramBot]:
     if token and chat_id:
         return TelegramBot(token, chat_id)
     return None
+
+
+def _local_today_str() -> str:
+    """Local calendar date (YYYY-MM-DD) from the weather-derived UTC offset."""
+    with state_lock:
+        tz_offset = int((state.get("weather") or {}).get("utc_offset_seconds") or 0)
+    return (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).date().isoformat()
+
+
+def _do_miner_stop() -> tuple:
+    """Stop the miner and hold it off until local midnight (manual override).
+
+    Single source of truth for the dashboard Stop button and Telegram /stopMiner.
+    Sets miner_hold_date so the control loop keeps the miner off and pauses
+    automatic SOC control + Smart Start until the local date rolls over. Returns
+    (ok: bool, error: Optional[str]).
+    """
+    settings = get_settings()
+    miner_ip = settings.get("miner_ip") or os.getenv("LUXOS_MINER_IP", "")
+    if not miner_ip:
+        return False, "Miner IP not configured"
+    update_settings({"miner_hold_date": _local_today_str()})
+    try:
+        client = get_or_create_luxos(miner_ip)
+        client.stop_mining()
+    except Exception as e:
+        return False, str(e)
+    with state_lock:
+        state["miner_running"]     = False
+        state["miner_hold_active"] = True
+        state["miner_cmd_pending"] = {"want": False, "cycles": 0}
+    return True, None
+
+
+def _do_miner_start() -> tuple:
+    """Clear the manual hold and start the miner, handing control back to
+    automatic SOC management (which governs again from the next cycle).
+
+    Single source of truth for the dashboard Start button and Telegram /startMiner.
+    Returns (ok: bool, error: Optional[str]).
+    """
+    settings = get_settings()
+    miner_ip = settings.get("miner_ip") or os.getenv("LUXOS_MINER_IP", "")
+    if not miner_ip:
+        return False, "Miner IP not configured"
+    update_settings({"miner_hold_date": ""})
+    try:
+        client = get_or_create_luxos(miner_ip)
+        client.start_mining()
+    except Exception as e:
+        return False, str(e)
+    with state_lock:
+        state["miner_running"]     = True
+        state["miner_hold_active"] = False
+        state["miner_cmd_pending"] = {"want": True, "cycles": 0}
+    return True, None
 
 
 def _fmt_ths(mhs: float) -> str:
@@ -452,6 +510,13 @@ def control_loop() -> None:
             smart_hold_active = bool(settings.get("smart_hold_date")) and \
                 settings.get("smart_hold_date") == _local_today
 
+            # Miner manual hold — force-stop until local midnight (via /stopMiner or
+            # the dashboard Stop button). While active, automatic SOC control and
+            # Smart Start are overridden and the miner is kept off. Rolls off
+            # automatically after midnight when the local date advances.
+            miner_hold_active = bool(settings.get("miner_hold_date")) and \
+                settings.get("miner_hold_date") == _local_today
+
             smart_active = False
             effective_soc_on  = soc_on
             effective_soc_off = soc_off
@@ -555,7 +620,7 @@ def control_loop() -> None:
                         if api_fail_action == "stop":
                             client.stop_mining()
                             action = "fail_stop"
-                        else:
+                        elif not miner_hold_active:
                             client.start_mining()
                             action = "fail_start"
                     except LuxOsError as e:
@@ -566,11 +631,15 @@ def control_loop() -> None:
                     notify_state["api_fail_count_at_notify"] = notify_state["api_fail_count"]
                     bot = _get_bot(settings)
                     if bot and settings.get("tg_api_failure"):
-                        action_desc = {
-                            "stop":  "Miner stopped as failsafe",
-                            "start": "Miner kept running (failsafe)",
-                            "keep":  "No action taken — monitoring",
-                        }.get(api_fail_action, "No action")
+                        if miner_hold_active and api_fail_action == "start":
+                            # Manual hold overrides the start failsafe — be honest.
+                            action_desc = "Miner kept OFF — disabled until midnight"
+                        else:
+                            action_desc = {
+                                "stop":  "Miner stopped as failsafe",
+                                "start": "Miner kept running (failsafe)",
+                                "keep":  "No action taken — monitoring",
+                            }.get(api_fail_action, "No action")
                         bot.send(
                             f"⚠️ <b>Solis API offline</b>\n"
                             f"{notify_state['api_fail_count']} consecutive failures\n"
@@ -595,6 +664,36 @@ def control_loop() -> None:
 
                     miner_running = actually_mining
 
+                    # Verified confirmation for a manual start/stop command. Fires
+                    # once the loop reads the miner actually at the requested state,
+                    # independent of the tg_miner_onoff toggle; suppresses the
+                    # duplicate auto on/off message for the same transition.
+                    with state_lock:
+                        pending = state.get("miner_cmd_pending")
+                    if pending is not None:
+                        bot = _get_bot(settings)
+                        if actually_mining == pending["want"]:
+                            if bot:
+                                if actually_mining:
+                                    bot.send("✅ <b>Miner is ON</b> — confirmed running.")
+                                else:
+                                    bot.send("🛑 <b>Miner is OFF</b> — disabled until midnight "
+                                             "(or until you start it again).")
+                            notify_state["prev_mining"] = actually_mining
+                            with state_lock:
+                                state["miner_cmd_pending"] = None
+                        else:
+                            pending["cycles"] += 1
+                            if pending["cycles"] >= 6:
+                                if bot:
+                                    bot.send("⚠️ Couldn't confirm the miner changed state — "
+                                             "please check it.")
+                                with state_lock:
+                                    state["miner_cmd_pending"] = None
+                            else:
+                                with state_lock:
+                                    state["miner_cmd_pending"] = pending
+
                     # Hysteresis: smart start uses single threshold; normal mode uses on/off buffer
                     if smart_active:
                         if actually_mining:
@@ -609,6 +708,11 @@ def control_loop() -> None:
                         desired_mining = soc >= effective_soc_off
                     else:
                         desired_mining = soc >= effective_soc_on
+
+                    # Manual hold (via /stopMiner or dashboard Stop) overrides all
+                    # automatic control and keeps the miner off until local midnight.
+                    if miner_hold_active:
+                        desired_mining = False
 
                     # EOD target override: project SOC at end of solar day and stop
                     # the miner early if running would cause us to miss the target.
@@ -775,6 +879,7 @@ def control_loop() -> None:
                 state["effective_soc_on"]  = effective_soc_on
                 state["smart_start_active"] = smart_active
                 state["smart_hold_active"]  = smart_hold_active
+                state["miner_hold_active"]  = miner_hold_active
                 state["smart_min_pv_w"]    = smart_min_pv_w
                 state["cycle"]             = cycle_num
                 state["error"]             = error_str
@@ -872,6 +977,124 @@ def pool_loop() -> None:
         time.sleep(300)  # refresh every 5 minutes
 
 
+def _build_info_message() -> str:
+    """Build the /info reply: current power readings and miner/dehumidifier toggles."""
+    with state_lock:
+        readings      = state.get("readings")
+        miner_running = state.get("miner_running")
+        miner_hold    = state.get("miner_hold_active")
+        smart_active  = state.get("smart_start_active")
+        pool          = state.get("pool") or {}
+        dehum_power   = state.get("dehum_power")
+        dehum_hum     = state.get("dehum_humidity")
+        dehum_tank    = state.get("dehum_tank_full")
+
+    lines = ["<b>⚡ Solar Miner status</b>"]
+    if readings:
+        lines.append(f"🔋 SOC: {readings['soc']:.1f}%")
+        lines.append(f"☀️ PV input: {readings['input_power_w'] / 1000:.2f} kW")
+        lines.append(f"🔌 Grid: {readings['grid_power_w'] / 1000:.2f} kW")
+        lines.append(f"🏠 Load: {readings['load_power_w'] / 1000:.2f} kW")
+        lines.append(f"🔋 Battery: {readings['battery_power_w'] / 1000:.2f} kW")
+        lines.append(f"🔌 Backup: {readings['backup_power_w'] / 1000:.2f} kW")
+    else:
+        lines.append("⚠️ No Solis readings yet")
+
+    if miner_running is None:
+        miner_str = "unknown"
+    else:
+        miner_str = "ON ⛏" if miner_running else "OFF 💤"
+    if miner_hold:
+        miner_str += " — disabled until midnight"
+    elif smart_active:
+        miner_str += " 🧠"
+    lines.append(f"⛏ Miner: <b>{miner_str}</b>")
+
+    if dehum_power is None:
+        dehum_str = "unknown"
+    else:
+        dehum_str = "ON" if dehum_power else "OFF"
+    if dehum_hum is not None:
+        dehum_str += f" ({dehum_hum:.0f}% RH)"
+    if dehum_tank:
+        dehum_str += " ⚠️ tank full"
+    lines.append(f"💧 Dehumidifier: <b>{dehum_str}</b>")
+
+    sats = pool.get("sats_today")
+    if sats is not None:
+        lines.append(f"💰 Sats (24h): {sats:,}")
+    hr = pool.get("hashrate_ths")
+    if hr:
+        lines.append(f"⚙️ Hashrate: {hr:.1f} TH/s")
+
+    return "\n".join(lines)
+
+
+def _handle_telegram_command(cmd: str, bot: TelegramBot) -> None:
+    """Dispatch an incoming Telegram command (already lower-cased, no leading slash)."""
+    if cmd in ("startminer", "minerstart"):
+        bot.send("⏳ Starting miner and resuming automatic control…")
+        ok, err = _do_miner_start()
+        if not ok:
+            bot.send(f"❌ Couldn't start miner: {err}")
+        # On success the control loop sends the verified ✅ confirmation.
+    elif cmd in ("stopminer", "minerstop"):
+        bot.send("⏳ Stopping miner and disabling it until midnight…")
+        ok, err = _do_miner_stop()
+        if not ok:
+            bot.send(f"❌ Couldn't stop miner: {err}")
+        # On success the control loop sends the verified 🛑 confirmation.
+    elif cmd == "info":
+        bot.send(_build_info_message())
+    elif cmd in ("help", "start", "commands"):
+        bot.send(
+            "<b>Solar Miner commands</b>\n"
+            "/startMiner — start mining &amp; resume automatic control\n"
+            "/stopMiner — stop &amp; keep off until midnight\n"
+            "/info — current power readings and toggles"
+        )
+
+
+def telegram_loop() -> None:
+    """Long-poll Telegram for commands. Only acts on the configured chat."""
+    offset = None
+    webhook_cleared = False
+    while True:
+        try:
+            settings = get_settings()
+            token   = (settings.get("telegram_bot_token") or "").strip()
+            chat_id = str(settings.get("telegram_chat_id") or "").strip()
+            if not token or not chat_id:
+                time.sleep(10)
+                continue
+            bot = TelegramBot(token, chat_id)
+            if not webhook_cleared:
+                bot.delete_webhook()
+                webhook_cleared = True
+            updates = bot.get_updates(offset=offset, timeout=25)
+            for upd in updates:
+                offset = upd["update_id"] + 1
+                msg = upd.get("message") or upd.get("edited_message")
+                if not msg:
+                    continue
+                # Security: only the configured chat may control the miner.
+                if str((msg.get("chat") or {}).get("id")) != chat_id:
+                    continue
+                text = (msg.get("text") or "").strip()
+                if not text.startswith("/"):
+                    continue
+                cmd = text.split()[0].lstrip("/").split("@")[0].lower()
+                try:
+                    _handle_telegram_command(cmd, bot)
+                except Exception as e:
+                    print(f"Telegram command error: {e}")
+            if not updates:
+                time.sleep(3)  # avoid hammering on auth/network errors
+        except Exception as e:
+            print(f"Telegram loop error: {e}")
+            time.sleep(5)
+
+
 # ── Flask routes ─────────────────────────────────────────────────
 
 @app.route("/")
@@ -897,6 +1120,8 @@ def api_status():
     local_today = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).date().isoformat()
     snapshot["smart_hold_active"] = bool(settings.get("smart_hold_date")) and \
         settings.get("smart_hold_date") == local_today
+    snapshot["miner_hold_active"] = bool(settings.get("miner_hold_date")) and \
+        settings.get("miner_hold_date") == local_today
     snapshot["app_version"] = APP_VERSION
     return jsonify(snapshot)
 
@@ -933,14 +1158,18 @@ def _fetch_daily_sats_rows(days: int, include_today: bool = True) -> list[dict]:
 
     history_by_date: dict = {}
     if api_key and username:
-        utc_date = datetime.now(timezone.utc).date()
+        # Luxor finalizes each day's revenue at 05:00 UTC. Key the cache on that
+        # boundary (now - 5h) so we refetch right when new data posts, instead of
+        # at 00:00 UTC — which would otherwise cache a still-empty prior day for
+        # up to a full day.
+        lux_day = (datetime.now(timezone.utc) - timedelta(hours=5)).date()
         with _revenue_lock:
-            if _revenue_cache["utc_date"] != utc_date:
+            if _revenue_cache["utc_date"] != lux_day:
                 try:
                     client = LuxPoolClient(api_key=api_key, username=username, api_url=api_url)
                     start = (local_today - timedelta(days=days + 1)).isoformat()
                     _revenue_cache["rows"]     = client.get_revenue_history(start, today_str)
-                    _revenue_cache["utc_date"] = utc_date
+                    _revenue_cache["utc_date"] = lux_day
                 except Exception as e:
                     print(f"Revenue history fetch error: {e}")
             history_by_date = {r["date"]: r["sats"] for r in _revenue_cache["rows"]}
@@ -1100,38 +1329,18 @@ def api_geocode():
 
 @app.route("/api/miner/start", methods=["POST"])
 def api_miner_start():
-    try:
-        settings = get_settings()
-        miner_ip = settings.get("miner_ip") or os.getenv("LUXOS_MINER_IP", "")
-        if not miner_ip:
-            return jsonify({"error": "Miner IP not configured"}), 400
-        client = get_or_create_luxos(miner_ip)
-        client.start_mining()
-        with state_lock:
-            state["miner_running"] = True
+    ok, err = _do_miner_start()
+    if ok:
         return jsonify({"ok": True})
-    except LuxOsError as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"error": err}), 400 if err == "Miner IP not configured" else 500
 
 
 @app.route("/api/miner/stop", methods=["POST"])
 def api_miner_stop():
-    try:
-        settings = get_settings()
-        miner_ip = settings.get("miner_ip") or os.getenv("LUXOS_MINER_IP", "")
-        if not miner_ip:
-            return jsonify({"error": "Miner IP not configured"}), 400
-        client = get_or_create_luxos(miner_ip)
-        client.stop_mining()
-        with state_lock:
-            state["miner_running"] = False
+    ok, err = _do_miner_stop()
+    if ok:
         return jsonify({"ok": True})
-    except LuxOsError as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"error": err}), 400 if err == "Miner IP not configured" else 500
 
 
 @app.route("/api/smart/hold", methods=["POST"])
@@ -1230,5 +1439,8 @@ if __name__ == "__main__":
 
     t_pool = threading.Thread(target=pool_loop, daemon=True, name="pool-loop")
     t_pool.start()
+
+    t_telegram = threading.Thread(target=telegram_loop, daemon=True, name="telegram-loop")
+    t_telegram.start()
 
     app.run(host="0.0.0.0", port=3000, debug=False)
