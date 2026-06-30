@@ -23,7 +23,7 @@ from dehumidifier import DehumidifierClient
 
 load_dotenv()
 
-APP_VERSION = "1.5.9"
+APP_VERSION = "1.5.10"
 
 app = Flask(__name__)
 
@@ -72,14 +72,17 @@ notify_state = {
     "api_fail_notified": False,
     "api_fail_count_at_notify": 0,
     "prev_mining": None,
-    "prev_smart_active": False,
-    "soc_low_notified": False,
-    "soc_full_notified": False,
+    # None = not yet primed; first cycle after (re)start establishes a silent
+    # baseline so edge-triggered alerts don't re-fire on every upgrade/restart.
+    "prev_smart_active": None,
+    "soc_low_notified": None,
+    "soc_full_notified": None,
     "prev_hashrate_mhs": None,
     "last_daily_date": None,
     "last_weekly_recap_date": None,
-    "sats_milestone_last": 0,
-    "prev_sunny_day_notified": False,
+    "sats_milestone_last": None,
+    "sats_milestone_date": None,
+    "last_sunny_day_date": None,
 }
 
 
@@ -241,7 +244,8 @@ def _fmt_ths(mhs: float) -> str:
 
 def _send_notifications(settings: dict, soc: Optional[float], actually_mining: bool,
                         smart_active: bool, soc_on: float, effective_soc_on: float,
-                        effective_soc_off: float, hashrate_mhs: float) -> None:
+                        effective_soc_off: float, hashrate_mhs: float,
+                        smart_hold_active: bool = False) -> None:
     bot = _get_bot(settings)
     if not bot:
         return
@@ -261,7 +265,7 @@ def _send_notifications(settings: dict, soc: Optional[float], actually_mining: b
             )
 
     # ── Smart Start ON / OFF ─────────────────────────────────────
-    if settings.get("tg_smart_start"):
+    if settings.get("tg_smart_start") and notify_state["prev_smart_active"] is not None:
         with state_lock:
             wx = state.get("weather")
         sunny = wx.get("remaining_sunny_hours", 0) if wx else 0
@@ -280,7 +284,11 @@ def _send_notifications(settings: dict, soc: Optional[float], actually_mining: b
     # ── SOC low warning ──────────────────────────────────────────
     if settings.get("tg_soc_low") and soc is not None:
         low_pct = float(settings.get("tg_soc_low_pct") or 20.0)
-        if soc < low_pct and not notify_state["soc_low_notified"]:
+        if notify_state["soc_low_notified"] is None:
+            # Prime silently on first cycle so a restart while already low
+            # doesn't re-announce on every upgrade.
+            notify_state["soc_low_notified"] = soc < low_pct
+        elif soc < low_pct and not notify_state["soc_low_notified"]:
             bot.send(
                 f"🔋 <b>Battery low: {soc:.1f}%</b>\n"
                 f"Miner is {'ON ⛏' if actually_mining else 'OFF 💤'}"
@@ -291,7 +299,9 @@ def _send_notifications(settings: dict, soc: Optional[float], actually_mining: b
 
     # ── Battery fully charged ────────────────────────────────────
     if settings.get("tg_soc_full") and soc is not None:
-        if soc >= 99.5 and not notify_state["soc_full_notified"]:
+        if notify_state["soc_full_notified"] is None:
+            notify_state["soc_full_notified"] = soc >= 99.5
+        elif soc >= 99.5 and not notify_state["soc_full_notified"]:
             bot.send(
                 f"🌞 <b>Battery fully charged!</b>\n"
                 f"{'Miner running ⛏' if actually_mining else 'Ready to mine whenever you need'}"
@@ -318,11 +328,23 @@ def _send_notifications(settings: dict, soc: Optional[float], actually_mining: b
     if settings.get("tg_sats_milestone"):
         with state_lock:
             pool = state.get("pool") or {}
+            tz_offset = int((state.get("weather") or {}).get("utc_offset_seconds") or 0)
         pool_sats = pool.get("sats_today", 0) or 0
         milestone = int(settings.get("tg_sats_milestone_amount") or 1000)
         if pool_sats > 0 and milestone > 0:
+            local_today = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).strftime("%Y-%m-%d")
             current_ms = (pool_sats // milestone) * milestone
-            if current_ms > notify_state["sats_milestone_last"]:
+            if notify_state["sats_milestone_last"] is None \
+                    or notify_state["sats_milestone_date"] != local_today:
+                # Prime silently on the first cycle and at each local-day
+                # rollover. sats_today is a rolling 24h figure (not a calendar
+                # reset), so baseline to the current value: that way we announce
+                # milestones the running total climbs to *during the new day*,
+                # without re-spamming yesterday's carried-over total at midnight
+                # or re-announcing on restart.
+                notify_state["sats_milestone_last"] = current_ms
+                notify_state["sats_milestone_date"] = local_today
+            elif current_ms > notify_state["sats_milestone_last"]:
                 notify_state["sats_milestone_last"] = current_ms
                 bot.send(
                     f"💰 <b>Sats milestone reached!</b>\n"
@@ -384,26 +406,33 @@ def _send_notifications(settings: dict, soc: Optional[float], actually_mining: b
                         f"<b>Total: {total:,} sats</b>"
                     )
 
-    # ── Sunny day ahead (checked on weather update) ───────────────
+    # ── Good solar day ahead (once per day at the configured local hour) ──
+    # A morning heads-up, not a live event. Fires at most once per local day,
+    # only during the target hour, and only when Smart Start is enabled, not
+    # manually held, and the forecast clears the sunny-hours threshold.
     if settings.get("tg_sunny_day_ahead"):
         with state_lock:
             wx = state.get("weather")
+            tz_offset = int((state.get("weather") or {}).get("utc_offset_seconds") or 0)
         if wx:
+            local_now = datetime.now(timezone.utc) + timedelta(seconds=tz_offset)
+            local_today = local_now.strftime("%Y-%m-%d")
+            target_hour = int(settings.get("tg_sunny_day_hour") or 8)
             sunny = wx.get("remaining_sunny_hours", 0) or 0
             sunny_thresh = float(settings.get("sunny_hours_threshold") or 3.0)
             smart_on = float(settings.get("smart_soc_on_threshold") or 60.0)
-            tonight = datetime.now().hour >= 20
-            if tonight and sunny < 1 and not notify_state["prev_sunny_day_notified"]:
-                pass  # don't alert if not sunny
-            elif sunny >= sunny_thresh and not notify_state["prev_sunny_day_notified"] and not smart_active:
-                notify_state["prev_sunny_day_notified"] = True
+            smart_start_enabled = bool(settings.get("smart_start_enabled", True))
+            if (local_now.hour == target_hour
+                    and notify_state["last_sunny_day_date"] != local_today
+                    and sunny >= sunny_thresh
+                    and smart_start_enabled
+                    and not smart_hold_active):
+                notify_state["last_sunny_day_date"] = local_today
                 bot.send(
                     f"☀️ <b>Good solar day ahead!</b>\n"
                     f"{int(sunny)} sunny hours remaining\n"
                     f"Smart Start will activate at {smart_on:.0f}% SOC"
                 )
-            elif sunny < sunny_thresh:
-                notify_state["prev_sunny_day_notified"] = False
 
     # Update previous state for next cycle
     notify_state["prev_mining"] = actually_mining
@@ -791,6 +820,7 @@ def control_loop() -> None:
                         effective_soc_on=effective_soc_on,
                         effective_soc_off=effective_soc_off,
                         hashrate_mhs=hashrate_mhs,
+                        smart_hold_active=smart_hold_active,
                     )
 
                 except LuxOsError as e:
@@ -1285,12 +1315,14 @@ def api_post_settings():
         "api_fail_cycles",
         "tg_soc_low_pct", "tg_hashrate_drop_pct", "tg_daily_hour",
         "tg_sats_milestone_amount", "tg_weekly_recap_day", "tg_weekly_recap_hour",
+        "tg_sunny_day_hour",
     ]
     for k in numeric_keys:
         if k in data:
             try:
                 if k in ("poll_interval_seconds", "api_fail_cycles", "tg_daily_hour",
-                         "tg_sats_milestone_amount", "tg_weekly_recap_day", "tg_weekly_recap_hour"):
+                         "tg_sats_milestone_amount", "tg_weekly_recap_day", "tg_weekly_recap_hour",
+                         "tg_sunny_day_hour"):
                     data[k] = int(data[k])
                 else:
                     data[k] = float(data[k])
@@ -1415,6 +1447,7 @@ if __name__ == "__main__":
     # don't re-fire if the container restarts within the same trigger hour.
     notify_state["last_daily_date"] = date.today().isoformat()
     notify_state["last_weekly_recap_date"] = date.today().isoformat()
+    notify_state["last_sunny_day_date"] = date.today().isoformat()
 
     settings_now = get_settings()
     seed_map = {
