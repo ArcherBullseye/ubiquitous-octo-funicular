@@ -23,7 +23,7 @@ from dehumidifier import DehumidifierClient
 
 load_dotenv()
 
-APP_VERSION = "1.5.10"
+APP_VERSION = "1.5.11"
 
 app = Flask(__name__)
 
@@ -65,6 +65,8 @@ _luxos_ip: Optional[str] = None
 
 SESSION_FILE = Path("data/luxos_session.txt")
 weather_refresh = threading.Event()
+control_refresh = threading.Event()  # wakes control_loop for an immediate re-poll
+pool_refresh = threading.Event()     # wakes pool_loop for an immediate re-poll
 
 # Notification state — only written by control_loop (no lock needed)
 notify_state = {
@@ -942,7 +944,9 @@ def control_loop() -> None:
             poll_interval = int(settings.get("poll_interval_seconds") or 60)
         except Exception:
             poll_interval = 60
-        time.sleep(max(0.0, poll_interval - elapsed))
+        # Sleep until the next interval, or wake early on a manual refresh.
+        control_refresh.wait(timeout=max(0.0, poll_interval - elapsed))
+        control_refresh.clear()
 
 
 # ── Weather loop ─────────────────────────────────────────────────
@@ -1004,7 +1008,9 @@ def pool_loop() -> None:
                         state["pool_last_updated"] = datetime.now(timezone.utc).isoformat()
         except Exception as e:
             print(f"Pool loop error: {e}")
-        time.sleep(300)  # refresh every 5 minutes
+        # Refresh every 5 minutes, or wake early on a manual refresh.
+        pool_refresh.wait(timeout=300)
+        pool_refresh.clear()
 
 
 def _build_info_message() -> str:
@@ -1130,6 +1136,15 @@ def telegram_loop() -> None:
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/api/refresh", methods=["POST"])
+def api_refresh():
+    """Wake all background loops for an immediate re-poll of every data source."""
+    control_refresh.set()
+    weather_refresh.set()
+    pool_refresh.set()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/status")

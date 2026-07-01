@@ -57,8 +57,27 @@
       border-radius: 50%;
       background: var(--red);
       flex-shrink: 0;
+      position: relative;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform .15s ease, box-shadow .15s ease;
     }
     .status-dot.fresh { background: var(--green); }
+    .status-dot::after {
+      content: "⟳";
+      font-size: 9px; font-weight: 700; line-height: 1;
+      color: #000;
+      opacity: 0;
+      transition: opacity .15s ease;
+      pointer-events: none;
+    }
+    .status-dot:hover, .status-dot.refreshing {
+      transform: scale(2.3);
+      box-shadow: 0 0 0 2px rgba(255,255,255,.12);
+    }
+    .status-dot:hover::after, .status-dot.refreshing::after { opacity: 1; }
+    .status-dot.refreshing::after { animation: dot-spin .8s linear infinite; }
+    @keyframes dot-spin { to { transform: rotate(360deg); } }
     #last-updated { color: var(--muted); font-size: 12px; }
 
     button {
@@ -512,7 +531,7 @@
   <h1>⚡ Solar Miner</h1>
   <div class="header-right">
     <div class="status-info">
-      <div class="status-dot" id="status-dot"></div>
+      <div class="status-dot" id="status-dot" title="Refresh now" onclick="manualRefresh()"></div>
       <span id="last-updated">Loading…</span>
     </div>
     <button class="btn-settings" onclick="openSettings()">⚙ Settings</button>
@@ -1373,6 +1392,39 @@
     }
   }
 
+  // ── Manual refresh (click the status dot) ────────────────────
+  async function manualRefresh() {
+    const dot = el('status-dot');
+    if (dot.classList.contains('refreshing')) return;
+    dot.classList.add('refreshing');
+    // Remember the current reading so we can spin until the backend advances it.
+    let before = null;
+    try {
+      const r0 = await fetch('/api/status');
+      if (r0.ok) before = (await r0.json()).last_updated || null;
+    } catch (e) { /* ignore */ }
+    try {
+      await fetch('/api/refresh', { method: 'POST' });
+      // Poll until the control loop finishes its live re-poll (cap ~8s),
+      // so the spinner reflects real completion rather than a fixed guess.
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 500));
+        try {
+          const r = await fetch('/api/status');
+          if (r.ok && (await r.json()).last_updated !== before) break;
+        } catch (e) { /* keep waiting */ }
+      }
+      await refresh();
+      loadHistory();
+      loadDailySats();
+    } catch (e) {
+      console.warn('manual refresh error:', e);
+    } finally {
+      dot.classList.remove('refreshing');
+    }
+  }
+
   // ── Main refresh ─────────────────────────────────────────────
   async function refresh() {
     try {
@@ -1382,7 +1434,7 @@
 
       // Status dot
       const fresh = isFresh(s.last_updated);
-      el('status-dot').className = 'status-dot' + (fresh ? ' fresh' : '');
+      el('status-dot').classList.toggle('fresh', fresh);
       el('last-updated').textContent = 'Last updated: ' + timeSince(s.last_updated);
 
       // Error banner
