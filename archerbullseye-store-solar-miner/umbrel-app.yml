@@ -4,7 +4,7 @@ name: Solar Miner
 tagline: Control your Bitcoin miner with solar power
 icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner/icon.svg
 category: bitcoin
-version: "1.5.10"
+version: "1.5.11"
 port: 3000
 description: >-
   Monitor your Solis solar inverter and automatically control your LuxOS
@@ -26,6 +26,12 @@ support: https://github.com/ArcherBullseye/ubiquitous-octo-funicular/issues
 gallery:
   - https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner/icon.svg
 releaseNotes: >-
+  v1.5.11: Added a manual refresh button — hover the green status dot in the
+  header and it grows to reveal a refresh icon; click it to make every data
+  source (Solis, miner, weather, pool) re-poll immediately. The dot spins until
+  the fresh reading lands.
+
+
   v1.5.10: Telegram notifications cleaned up. The "Good solar day ahead"
   forecast now sends once per day at 8am local time (configurable) instead of
   repeating. Upgrading the app no longer re-fires Smart Start, battery-low,
