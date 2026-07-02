@@ -23,7 +23,7 @@ from dehumidifier import DehumidifierClient
 
 load_dotenv()
 
-APP_VERSION = "1.5.12"
+APP_VERSION = "1.5.13"
 
 app = Flask(__name__)
 
