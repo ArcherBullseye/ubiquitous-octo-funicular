@@ -156,6 +156,13 @@
 
     .miner-buttons { display: flex; gap: .4em; margin-top: .6em; }
     .miner-buttons button { flex: 1; padding: .35em .5em; font-size: clamp(10px, .75vw, 12px); }
+    .miner-row { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-top: 8px; }
+    .miner-row .m-name { font-weight: 700; color: var(--muted); width: 24px; flex-shrink: 0; }
+    .miner-row .m-state { flex: 1; font-weight: 600; min-width: 0; }
+    .miner-row .m-hr { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .miner-row .m-btns { display: flex; gap: 4px; flex-shrink: 0; }
+    .miner-row .m-btns button { padding: 2px 8px; font-size: 12px; font-weight: 700; border-radius: 5px; line-height: 1.15; }
+    .miner-row .m-btns button:disabled { opacity: .35; cursor: default; }
 
     /* ── Info row (sats + btc price + weather) ── */
     /* Same 7-col grid as power-grid so cards align perfectly */
@@ -578,12 +585,8 @@
 
     <div class="card">
       <div class="card-label">🎛 Mining Control</div>
-      <div class="card-value" id="miner-state" style="font-size:26px;">—</div>
-      <div class="card-sub" id="miner-threshold">SOC ON: —</div>
-      <div class="miner-buttons">
-        <button class="btn-green" onclick="minerStart()">▶ Start</button>
-        <button class="btn-red"   onclick="minerStop()">■ Stop</button>
-      </div>
+      <div id="miners-list"></div>
+      <div class="card-sub" id="miner-threshold" style="margin-top:8px;">SOC ON: —</div>
     </div>
 
     <div class="card">
@@ -749,18 +752,30 @@
           </div>
         </div>
 
-        <!-- Miner -->
+        <!-- Miners -->
         <div class="settings-panel" id="panel-miner">
-          <div class="panel-title">Miner</div>
+          <div class="panel-title">Miners</div>
+          <div class="form-hint" style="margin-bottom:10px;">Smart Start controls both miners together. If one can't be reached, the other is still controlled. Leave X2 blank if you only have one miner.</div>
+
           <div class="form-group">
-            <label>Miner IP Address</label>
+            <label>Miner X1 — IP Address</label>
             <input type="text" id="s-miner_ip" placeholder="e.g. 192.168.1.50" />
-            <div class="form-hint">Local IP of your LuxOS miner.</div>
+            <div class="form-hint">Local IP of your first LuxOS miner.</div>
           </div>
           <div class="form-group">
-            <label>Miner Power Draw (W)</label>
+            <label>Miner X1 — Power Draw (W)</label>
             <input type="number" id="s-miner_power_w" step="10" min="0" placeholder="e.g. 3450" />
-            <div class="form-hint">Used to estimate whether PV output can offset mining load.</div>
+          </div>
+
+          <div class="form-group">
+            <label>Miner X2 — IP Address</label>
+            <input type="text" id="s-miner2_ip" placeholder="e.g. 192.168.88.17" />
+            <div class="form-hint">Local IP of your second LuxOS miner (optional).</div>
+          </div>
+          <div class="form-group">
+            <label>Miner X2 — Power Draw (W)</label>
+            <input type="number" id="s-miner2_power_w" step="10" min="0" placeholder="e.g. 3450" />
+            <div class="form-hint">Combined draw is used to estimate whether PV output can offset mining load.</div>
           </div>
         </div>
 
@@ -1483,26 +1498,10 @@
         el('backup-power').textContent = fmt(r.backup_power_w);
       }
 
-      // Miner state
-      const mining = s.miner_running;
-      const mEl = el('miner-state');
-      if (mining === true) {
-        mEl.textContent = 'ON';
-        mEl.style.color = 'var(--green)';
-      } else if (mining === false) {
-        mEl.textContent = 'OFF';
-        mEl.style.color = 'var(--red)';
-      } else {
-        mEl.textContent = '?';
-        mEl.style.color = 'var(--muted)';
-      }
-      if (s.miner_hold_active) {
-        el('miner-threshold').textContent = '⏸ Disabled until midnight';
-        el('miner-threshold').style.color = 'var(--amber)';
-      } else {
-        el('miner-threshold').textContent = 'SOC ON: ' + (s.effective_soc_on != null ? s.effective_soc_on.toFixed(1) + '%' : '—');
-        el('miner-threshold').style.color = '';
-      }
+      // Miner state — per-miner rows (X1, X2) with their own hold indicators
+      _renderMiners(s.miners, false);
+      el('miner-threshold').textContent = 'SOC ON: ' + (s.effective_soc_on != null ? s.effective_soc_on.toFixed(1) + '%' : '—');
+      el('miner-threshold').style.color = '';
 
       // Smart start
       const smartBadge = el('smart-badge');
@@ -1701,14 +1700,14 @@
       if (!resp.ok) return;
       const s = await resp.json();
 
-      const textKeys = ['solis_api_key','solis_inverter_sn','miner_ip','location_name','lux_pool_username','lux_pool_api_url','telegram_chat_id'];
+      const textKeys = ['solis_api_key','solis_inverter_sn','miner_ip','miner2_ip','location_name','lux_pool_username','lux_pool_api_url','telegram_chat_id'];
       const pwdKeys  = ['solis_api_secret','lux_pool_api_key','telegram_bot_token','dehum_local_key'];
       const numKeys  = [
         'poll_interval_seconds','soc_on_threshold','soc_off_threshold',
         'smart_soc_on_threshold','smart_soc_off_threshold',
         'sunny_hours_threshold','radiation_threshold_wm2','smart_min_pv_w',
         'location_lat','location_lon',
-        'battery_capacity_kwh','pv_peak_kw','miner_power_w',
+        'battery_capacity_kwh','pv_peak_kw','miner_power_w','miner2_power_w',
         'eod_soc_target', 'dehum_excess_threshold_w', 'dehum_version',
         'dehum_min_run_minutes', 'dehum_min_off_minutes', 'dehum_manual_override_hours',
         'api_fail_cycles',
@@ -1769,6 +1768,7 @@
       solis_api_secret:        el('s-solis_api_secret').value,
       solis_inverter_sn:       el('s-solis_inverter_sn').value,
       miner_ip:                el('s-miner_ip').value,
+      miner2_ip:               el('s-miner2_ip').value,
       poll_interval_seconds:   Number(el('s-poll_interval_seconds').value),
       soc_on_threshold:        Number(el('s-soc_on_threshold').value),
       soc_off_threshold:       Number(el('s-soc_off_threshold').value),
@@ -1795,6 +1795,7 @@
       battery_capacity_kwh:    Number(el('s-battery_capacity_kwh').value),
       pv_peak_kw:              Number(el('s-pv_peak_kw').value),
       miner_power_w:           Number(el('s-miner_power_w').value),
+      miner2_power_w:          Number(el('s-miner2_power_w').value),
       api_fail_action:         el('s-api_fail_action').value,
       api_fail_cycles:         Number(el('s-api_fail_cycles').value),
       lux_pool_api_key:        el('s-lux_pool_api_key').value,
@@ -2016,33 +2017,63 @@
   // ── Miner controls ───────────────────────────────────────────
   let _fastPoll = null;
 
-  function _setMinerCard(mining, checking) {
-    const mEl = el('miner-state');
-    if (checking) {
-      mEl.textContent = '…';
-      mEl.style.color = 'var(--amber)';
-    } else if (mining === true) {
-      mEl.textContent = 'ON';
-      mEl.style.color = 'var(--green)';
-    } else if (mining === false) {
-      mEl.textContent = 'OFF';
-      mEl.style.color = 'var(--red)';
+  // Render the per-miner rows (X1, X2) inside the Mining Control card, each with
+  // its own Start/Stop buttons. Stop pauses just that miner until midnight.
+  function _renderMiners(miners, checking) {
+    const list = el('miners-list');
+    if (!list) return;
+    const present = (miners && Object.keys(miners).length) ? Object.keys(miners).sort() : [];
+    if (!present.length && !checking) {
+      list.innerHTML = '<div class="miner-row"><span class="m-state" style="color:var(--muted)">No miner configured</span></div>';
+      return;
     }
+    const labels = present.length ? present : ['X1'];
+    list.innerHTML = labels.map(label => {
+      const m = (miners && miners[label]) || {};
+      let stateHtml, hr = '';
+      if (checking) {
+        stateHtml = '<span style="color:var(--amber)">checking…</span>';
+      } else if (m.reachable === false) {
+        stateHtml = '<span style="color:var(--amber)">⚠ unreachable' + (m.hold ? ' · held' : '') + '</span>';
+      } else if (m.hold) {
+        stateHtml = '<span style="color:var(--amber)">⏸ held until midnight</span>';
+      } else if (m.running === true) {
+        stateHtml = '<span style="color:var(--green)">● ON</span>';
+      } else if (m.running === false) {
+        stateHtml = '<span style="color:var(--red)">● OFF</span>';
+      } else {
+        stateHtml = '<span style="color:var(--muted)">?</span>';
+      }
+      if (m.reachable !== false && m.hashrate_mhs) {
+        hr = (m.hashrate_mhs / 1e6).toFixed(1) + ' TH/s';  // MHS → TH/s
+      }
+      const dis = checking ? 'disabled' : '';
+      const btns = `<span class="m-btns">`
+        + `<button class="btn-green" ${dis} onclick="minerStart('${label}')" title="Start ${label}">▶</button>`
+        + `<button class="btn-red" ${dis} onclick="minerStop('${label}')" title="Stop ${label} until midnight">■</button>`
+        + `</span>`;
+      return `<div class="miner-row"><span class="m-name">${label}</span>`
+           + `<span class="m-state">${stateHtml}</span><span class="m-hr">${hr}</span>${btns}</div>`;
+    }).join('');
   }
 
-  function _startFastPoll(desiredState) {
+  // Poll the targeted miner (or the aggregate) until it reaches desiredState.
+  function _startFastPoll(desiredState, label) {
     if (_fastPoll) clearInterval(_fastPoll);
     let attempts = 0;
     const maxAttempts = 10;  // 2s × 10 = 20s max
-    _setMinerCard(null, true);
+    _renderMiners(null, true);
     _fastPoll = setInterval(async () => {
       attempts++;
       try {
         const resp = await fetch('/api/miner/quick');
         const data = await resp.json();
         if (resp.ok) {
-          _setMinerCard(data.mining, false);
-          if (data.mining === desiredState || attempts >= maxAttempts) {
+          _renderMiners(data.miners, false);
+          const observed = label
+            ? (data.miners && data.miners[label] ? data.miners[label].running : undefined)
+            : data.mining;
+          if (observed === desiredState || attempts >= maxAttempts) {
             clearInterval(_fastPoll);
             _fastPoll = null;
             refresh();
@@ -2067,21 +2098,29 @@
     } catch(e) { alert('Error: ' + e); }
   }
 
-  async function minerStart() {
+  async function minerStart(label) {
     try {
-      const resp = await fetch('/api/miner/start', {method:'POST'});
+      const resp = await fetch('/api/miner/start', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(label ? {miner: label} : {}),
+      });
       const data = await resp.json();
       if (!resp.ok) { alert('Error: ' + (data.error || 'unknown')); return; }
-      _startFastPoll(true);
+      _startFastPoll(true, label);
     } catch(e) { alert('Error: ' + e); }
   }
 
-  async function minerStop() {
+  async function minerStop(label) {
     try {
-      const resp = await fetch('/api/miner/stop', {method:'POST'});
+      const resp = await fetch('/api/miner/stop', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(label ? {miner: label} : {}),
+      });
       const data = await resp.json();
       if (!resp.ok) { alert('Error: ' + (data.error || 'unknown')); return; }
-      _startFastPoll(false);
+      _startFastPoll(false, label);
     } catch(e) { alert('Error: ' + e); }
   }
 
