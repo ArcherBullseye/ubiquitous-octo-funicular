@@ -11,7 +11,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "solis_api_secret": "",
     "solis_inverter_sn": "",
     "solis_base_url": "https://www.soliscloud.com:13333",
-    "miner_ip": "",
+    "miner_ip": "",       # X1 (primary miner)
+    "miner2_ip": "",      # X2 (second miner)
     "poll_interval_seconds": 60,
     "soc_on_threshold": 85.0,
     "soc_off_threshold": 80.0,
@@ -22,13 +23,15 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "radiation_threshold_wm2": 300.0,
     "smart_min_pv_w": 1000.0,
     "smart_hold_date": "",  # local date (YYYY-MM-DD) Smart Start is paused until midnight
-    "miner_hold_date": "",  # local date (YYYY-MM-DD) miner is force-stopped until midnight
+    "miner_hold_date": "",   # local date (YYYY-MM-DD) X1 is force-stopped until midnight
+    "miner2_hold_date": "",  # local date (YYYY-MM-DD) X2 is force-stopped until midnight
     "location_lat": 0.0,
     "location_lon": 0.0,
     "location_name": "",
     "battery_capacity_kwh": 0.0,
     "pv_peak_kw": 0.0,
-    "miner_power_w": 0.0,
+    "miner_power_w": 0.0,    # X1 power draw (W)
+    "miner2_power_w": 0.0,   # X2 power draw (W)
     # API failsafe
     "api_fail_action": "stop",
     "api_fail_cycles": 3,

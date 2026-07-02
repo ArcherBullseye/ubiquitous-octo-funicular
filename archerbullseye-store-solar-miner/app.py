@@ -4,7 +4,7 @@ import threading
 import warnings
 from datetime import datetime, date, timezone, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 warnings.filterwarnings("ignore", message=".*urllib3.*", category=Warning)
 warnings.filterwarnings("ignore", message=".*OpenSSL.*", category=Warning)
@@ -23,13 +23,14 @@ from dehumidifier import DehumidifierClient
 
 load_dotenv()
 
-APP_VERSION = "1.5.11"
+APP_VERSION = "1.5.12"
 
 app = Flask(__name__)
 
 state = {
     "readings": None,
-    "miner_running": None,
+    "miner_running": None,   # aggregate: True if ANY reachable miner is on
+    "miners": {},            # per-miner: {"X1": {running, hashrate_mhs, reachable, error}, ...}
     "weather": None,
     "pool": None,
     "btc_price_usd": None,
@@ -59,9 +60,8 @@ state = {
 }
 state_lock = threading.Lock()
 
-luxos_client: Optional[LuxOsClient] = None
+luxos_clients: Dict[str, LuxOsClient] = {}  # keyed by miner IP
 luxos_lock = threading.Lock()
-_luxos_ip: Optional[str] = None
 
 SESSION_FILE = Path("data/luxos_session.txt")
 weather_refresh = threading.Event()
@@ -95,77 +95,152 @@ _revenue_lock = threading.Lock()
 
 # ── Session helpers ──────────────────────────────────────────────
 
-def _save_session(sid: Optional[str]) -> None:
+def _session_file(ip: str) -> Path:
+    """Per-miner session file so each miner keeps its own LuxOS session id."""
+    safe = ip.replace(":", "_").replace("/", "_").replace(".", "-")
+    return SESSION_FILE.parent / f"luxos_session_{safe}.txt"
+
+
+def _save_session(ip: str, sid: Optional[str]) -> None:
     try:
-        SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        f = _session_file(ip)
+        f.parent.mkdir(parents=True, exist_ok=True)
         if sid:
-            SESSION_FILE.write_text(sid)
-        elif SESSION_FILE.exists():
-            SESSION_FILE.unlink()
+            f.write_text(sid)
+        elif f.exists():
+            f.unlink()
     except Exception:
         pass
 
 
-def _load_session() -> Optional[str]:
+def _load_session(ip: str) -> Optional[str]:
     try:
-        if SESSION_FILE.exists():
-            return SESSION_FILE.read_text().strip() or None
+        f = _session_file(ip)
+        if f.exists():
+            return f.read_text().strip() or None
     except Exception:
         pass
     return None
 
 
+# Shorter than the client default so an unreachable miner fails fast and the
+# control loop can fall back to driving the other one instead of stalling.
+LUXOS_TIMEOUT = 6.0
+
+
 def get_or_create_luxos(ip: str) -> LuxOsClient:
-    global luxos_client, _luxos_ip
     with luxos_lock:
-        if luxos_client is not None and _luxos_ip == ip and luxos_client._session_id:
-            return luxos_client
+        client = luxos_clients.get(ip)
+        if client is not None and client._session_id:
+            return client
 
-        if luxos_client is not None and _luxos_ip != ip:
-            try:
-                luxos_client.close()
-                _save_session(None)
-            except Exception:
-                pass
-            luxos_client = None
-
-        client = LuxOsClient(ip=ip)
-        _luxos_ip = ip
+        client = LuxOsClient(ip=ip, timeout=LUXOS_TIMEOUT)
 
         try:
             client.logon()
-            _save_session(client._session_id)
+            _save_session(ip, client._session_id)
         except LuxOsError as e:
             if "Another session is active" in str(e):
-                saved_sid = _load_session()
+                saved_sid = _load_session(ip)
                 if saved_sid:
                     try:
-                        tmp = LuxOsClient(ip=ip)
+                        tmp = LuxOsClient(ip=ip, timeout=LUXOS_TIMEOUT)
                         tmp._session_id = saved_sid
                         tmp.logoff()
-                        _save_session(None)
+                        _save_session(ip, None)
                     except Exception:
                         pass
                 client.logon()
-                _save_session(client._session_id)
+                _save_session(ip, client._session_id)
             else:
                 raise
 
-        luxos_client = client
-        return luxos_client
+        luxos_clients[ip] = client
+        return client
 
 
-def _clear_luxos_client() -> None:
-    global luxos_client, _luxos_ip
+def _clear_luxos_client(ip: str) -> None:
     with luxos_lock:
-        if luxos_client is not None:
+        client = luxos_clients.pop(ip, None)
+        if client is not None:
             try:
-                luxos_client.close()
-                _save_session(None)
+                client.close()
+                _save_session(ip, None)
             except Exception:
                 pass
-        luxos_client = None
-        _luxos_ip = None
+
+
+def _configured_miners(settings: dict) -> list:
+    """Return [(label, ip)] for each configured miner. X1 is the primary."""
+    miners = []
+    ip1 = settings.get("miner_ip") or os.getenv("LUXOS_MINER_IP", "")
+    if ip1:
+        miners.append(("X1", ip1))
+    ip2 = settings.get("miner2_ip", "")
+    if ip2:
+        miners.append(("X2", ip2))
+    return miners
+
+
+def _hold_key(label: str) -> str:
+    """Settings key holding the manual-hold date for a given miner."""
+    return "miner_hold_date" if label == "X1" else "miner2_hold_date"
+
+
+def _miner_hold_map(settings: dict) -> dict:
+    """{label: bool} — True while that miner is manually held off (its stored
+    hold date matches today's local date). Rolls off at local midnight."""
+    today = _local_today_str()
+    return {
+        label: bool(settings.get(_hold_key(label))) and settings.get(_hold_key(label)) == today
+        for label, _ in _configured_miners(settings)
+    }
+
+
+def _total_miner_power_w(settings: dict) -> float:
+    """Combined power draw (W) of all configured miners — used by the Smart Start
+    profitability gate and the EOD SOC projection, so both reflect running both."""
+    total = 0.0
+    if settings.get("miner_ip") or os.getenv("LUXOS_MINER_IP", ""):
+        total += float(settings.get("miner_power_w") or 0.0)
+    if settings.get("miner2_ip", ""):
+        total += float(settings.get("miner2_power_w") or 0.0)
+    return total
+
+
+def _read_miner(ip: str) -> dict:
+    """Poll a single miner's on/off state + hashrate. Never raises — an
+    unreachable miner comes back as reachable=False so the caller can keep
+    driving the other one."""
+    try:
+        client = get_or_create_luxos(ip)
+        try:
+            running = client.is_mining()
+            hr = client.last_hashrate_mhs
+        except LuxOsError:
+            _clear_luxos_client(ip)
+            client = get_or_create_luxos(ip)
+            running = client.is_mining()
+            hr = client.last_hashrate_mhs
+        return {"running": running, "hashrate_mhs": hr, "reachable": True, "error": None}
+    except Exception as e:
+        return {"running": None, "hashrate_mhs": 0.0, "reachable": False, "error": str(e)}
+
+
+def _apply_miner(ip: str, desired: bool) -> tuple:
+    """Drive a single miner to desired on/off state, with one reconnect retry.
+    Returns (ok: bool, error: Optional[str])."""
+    try:
+        client = get_or_create_luxos(ip)
+        try:
+            client.start_mining() if desired else client.stop_mining()
+        except LuxOsError:
+            _clear_luxos_client(ip)
+            client = get_or_create_luxos(ip)
+            client.start_mining() if desired else client.stop_mining()
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 
 # ── Telegram helpers ─────────────────────────────────────────────
@@ -185,53 +260,63 @@ def _local_today_str() -> str:
     return (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).date().isoformat()
 
 
-def _do_miner_stop() -> tuple:
-    """Stop the miner and hold it off until local midnight (manual override).
+def _do_miner_command(desired: bool, target: Optional[str] = None) -> tuple:
+    """Manually start (desired=True) or stop (desired=False) miners.
 
-    Single source of truth for the dashboard Stop button and Telegram /stopMiner.
-    Sets miner_hold_date so the control loop keeps the miner off and pauses
-    automatic SOC control + Smart Start until the local date rolls over. Returns
-    (ok: bool, error: Optional[str]).
+    target=None acts on every configured miner; target="X1"/"X2" acts on just
+    that one. Stopping sets the miner's per-miner hold date (kept off until local
+    midnight or until manually started); starting clears it and hands control
+    back to automatic SOC/Smart Start management. Succeeds if at least one
+    targeted miner accepted the command. Returns (ok: bool, error: Optional[str]).
+
+    Single source of truth for the dashboard buttons and Telegram /start|/stopMiner.
     """
     settings = get_settings()
-    miner_ip = settings.get("miner_ip") or os.getenv("LUXOS_MINER_IP", "")
-    if not miner_ip:
-        return False, "Miner IP not configured"
-    update_settings({"miner_hold_date": _local_today_str()})
-    try:
-        client = get_or_create_luxos(miner_ip)
-        client.stop_mining()
-    except Exception as e:
-        return False, str(e)
+    miners = _configured_miners(settings)
+    if target is not None:
+        miners = [(l, ip) for l, ip in miners if l == target]
+    if not miners:
+        return False, "Miner IP not configured" if target is None else f"Miner {target} not configured"
+
+    # Per-miner hold: stop → hold until midnight; start → clear hold.
+    hold_date = _local_today_str() if not desired else ""
+    update_settings({_hold_key(label): hold_date for label, _ in miners})
+
+    errs = []
+    for label, ip in miners:
+        ok, err = _apply_miner(ip, desired)
+        if not ok:
+            errs.append(f"{label}: {err}")
+
     with state_lock:
-        state["miner_running"]     = False
-        state["miner_hold_active"] = True
-        state["miner_cmd_pending"] = {"want": False, "cycles": 0}
+        # Per-miner pending confirmation (merged so a command on X1 doesn't
+        # clear an in-flight one on X2).
+        pending = dict(state.get("miner_cmd_pending") or {})
+        miners_state = dict(state.get("miners") or {})
+        for label, _ in miners:
+            pending[label] = {"want": desired, "cycles": 0}
+            row = dict(miners_state.get(label) or {})
+            row["running"] = desired          # optimistic; verified next cycle
+            row["hold"] = not desired
+            miners_state[label] = row
+        state["miner_cmd_pending"] = pending
+        state["miners"] = miners_state
+        # Aggregate for legacy consumers.
+        reachable = [m for m in miners_state.values() if m.get("reachable", True)]
+        state["miner_running"] = any(bool(m.get("running")) for m in reachable) if reachable else None
+        state["miner_hold_active"] = all(m.get("hold") for m in miners_state.values()) if miners_state else False
+
+    if len(errs) == len(miners):
+        return False, "; ".join(errs)
     return True, None
 
 
-def _do_miner_start() -> tuple:
-    """Clear the manual hold and start the miner, handing control back to
-    automatic SOC management (which governs again from the next cycle).
+def _do_miner_stop(target: Optional[str] = None) -> tuple:
+    return _do_miner_command(False, target)
 
-    Single source of truth for the dashboard Start button and Telegram /startMiner.
-    Returns (ok: bool, error: Optional[str]).
-    """
-    settings = get_settings()
-    miner_ip = settings.get("miner_ip") or os.getenv("LUXOS_MINER_IP", "")
-    if not miner_ip:
-        return False, "Miner IP not configured"
-    update_settings({"miner_hold_date": ""})
-    try:
-        client = get_or_create_luxos(miner_ip)
-        client.start_mining()
-    except Exception as e:
-        return False, str(e)
-    with state_lock:
-        state["miner_running"]     = True
-        state["miner_hold_active"] = False
-        state["miner_cmd_pending"] = {"want": True, "cycles": 0}
-    return True, None
+
+def _do_miner_start(target: Optional[str] = None) -> tuple:
+    return _do_miner_command(True, target)
 
 
 def _fmt_ths(mhs: float) -> str:
@@ -511,7 +596,7 @@ def control_loop() -> None:
             api_key    = settings.get("solis_api_key")    or os.getenv("SOLIS_API_KEY", "")
             api_secret = settings.get("solis_api_secret") or os.getenv("SOLIS_API_SECRET", "")
             inverter_sn = settings.get("solis_inverter_sn") or os.getenv("SOLIS_INVERTER_SN", "")
-            miner_ip   = settings.get("miner_ip")         or os.getenv("LUXOS_MINER_IP", "")
+            miners     = _configured_miners(settings)   # [(label, ip), ...] — X1, X2
 
             poll_interval       = int(settings.get("poll_interval_seconds") or 60)
             soc_on              = float(settings.get("soc_on_threshold") or 85.0)
@@ -530,7 +615,9 @@ def control_loop() -> None:
                 cycle_num = state.get("cycle", 0) + 1
 
             pv_peak_kw   = float(settings.get("pv_peak_kw") or 0.0)
-            miner_power_w = float(settings.get("miner_power_w") or 0.0)
+            # Combined draw of all configured miners (Smart Start now controls both,
+            # so the profitability + EOD projections must cover the total load).
+            miner_power_w = _total_miner_power_w(settings)
 
             # Smart Start manual hold — paused until local midnight. While the
             # stored hold date matches today's local date, Smart Start is off and
@@ -541,12 +628,17 @@ def control_loop() -> None:
             smart_hold_active = bool(settings.get("smart_hold_date")) and \
                 settings.get("smart_hold_date") == _local_today
 
-            # Miner manual hold — force-stop until local midnight (via /stopMiner or
-            # the dashboard Stop button). While active, automatic SOC control and
-            # Smart Start are overridden and the miner is kept off. Rolls off
-            # automatically after midnight when the local date advances.
-            miner_hold_active = bool(settings.get("miner_hold_date")) and \
-                settings.get("miner_hold_date") == _local_today
+            # Per-miner manual hold — force-stop a single miner until local
+            # midnight (via /stopMiner or the dashboard Stop button). While a
+            # miner is held it stays off regardless of SOC/Smart Start; the
+            # other miner is unaffected. Rolls off after midnight automatically.
+            miner_hold = {
+                label: bool(settings.get(_hold_key(label))) and settings.get(_hold_key(label)) == _local_today
+                for label, _ in miners
+            }
+            # Aggregate flag for legacy state/notifications: held only when ALL
+            # configured miners are held.
+            miner_hold_active = bool(miner_hold) and all(miner_hold.values())
 
             smart_active = False
             effective_soc_on  = soc_on
@@ -644,18 +736,24 @@ def control_loop() -> None:
                 error_str = "Solis credentials not configured"
 
             # ── API Failsafe ─────────────────────────────────────
-            if readings is None and miner_ip and notify_state["api_fail_count"] >= api_fail_cycles:
+            if readings is None and miners and notify_state["api_fail_count"] >= api_fail_cycles:
                 if api_fail_action in ("stop", "start"):
-                    try:
-                        client = get_or_create_luxos(miner_ip)
+                    # Apply the failsafe to every miner independently — an
+                    # unreachable one is skipped so the others still act.
+                    for label, ip in miners:
                         if api_fail_action == "stop":
-                            client.stop_mining()
-                            action = "fail_stop"
-                        elif not miner_hold_active:
-                            client.start_mining()
-                            action = "fail_start"
-                    except LuxOsError as e:
-                        error_str = (error_str or "") + f" | Fail-safe action error: {e}"
+                            ok, err = _apply_miner(ip, False)
+                            if ok:
+                                action = "fail_stop"
+                        elif not miner_hold.get(label):
+                            # Start failsafe — but never override this miner's hold.
+                            ok, err = _apply_miner(ip, True)
+                            if ok:
+                                action = "fail_start"
+                        else:
+                            ok, err = True, None
+                        if not ok:
+                            error_str = (error_str or "") + f" | {label} fail-safe error: {err}"
 
                 if not notify_state["api_fail_notified"]:
                     notify_state["api_fail_notified"] = True
@@ -677,53 +775,68 @@ def control_loop() -> None:
                             f"Action: {action_desc}"
                         )
 
-            # ── Control miner ────────────────────────────────────
+            # ── Control miners ───────────────────────────────────
+            # Two-phase: read every miner, compute one shared desired state from
+            # the aggregate, then drive each reachable miner to it. An unreachable
+            # miner is skipped so the other keeps being controlled.
             hashrate_mhs = 0.0
+            per_miner = {}   # label -> read result (+ per-miner "action")
 
-            if readings is not None and miner_ip:
+            if readings is not None and miners:
                 soc = readings["soc"]
-                try:
-                    client = get_or_create_luxos(miner_ip)
-                    try:
-                        actually_mining = client.is_mining()
-                        hashrate_mhs = client.last_hashrate_mhs
-                    except LuxOsError:
-                        _clear_luxos_client()
-                        client = get_or_create_luxos(miner_ip)
-                        actually_mining = client.is_mining()
-                        hashrate_mhs = client.last_hashrate_mhs
 
+                # Phase 1 — read each miner's current state (never raises).
+                for label, ip in miners:
+                    r = _read_miner(ip)
+                    r["action"] = "none"
+                    per_miner[label] = r
+
+                reachable = {l: m for l, m in per_miner.items() if m["reachable"]}
+                if reachable:
+                    actually_mining = any(bool(m["running"]) for m in reachable.values())
+                    hashrate_mhs = sum(m["hashrate_mhs"] or 0.0 for m in reachable.values())
                     miner_running = actually_mining
+                else:
+                    actually_mining = None
+                    miner_running = None
+                    error_str = (error_str or "") + " | No miners reachable"
 
-                    # Verified confirmation for a manual start/stop command. Fires
-                    # once the loop reads the miner actually at the requested state,
-                    # independent of the tg_miner_onoff toggle; suppresses the
-                    # duplicate auto on/off message for the same transition.
+                if reachable:
+                    # Per-miner verified confirmation for a manual start/stop
+                    # command. Fires once the loop reads that miner actually at
+                    # the requested state, independent of the tg_miner_onoff
+                    # toggle. Setting prev_mining to the current aggregate on any
+                    # confirmation suppresses the duplicate auto on/off edge alert.
                     with state_lock:
-                        pending = state.get("miner_cmd_pending")
-                    if pending is not None:
+                        pending = dict(state.get("miner_cmd_pending") or {})
+                    if pending:
                         bot = _get_bot(settings)
-                        if actually_mining == pending["want"]:
-                            if bot:
-                                if actually_mining:
-                                    bot.send("✅ <b>Miner is ON</b> — confirmed running.")
-                                else:
-                                    bot.send("🛑 <b>Miner is OFF</b> — disabled until midnight "
-                                             "(or until you start it again).")
-                            notify_state["prev_mining"] = actually_mining
-                            with state_lock:
-                                state["miner_cmd_pending"] = None
-                        else:
-                            pending["cycles"] += 1
-                            if pending["cycles"] >= 6:
+                        confirmed_any = False
+                        for label in list(pending.keys()):
+                            m = reachable.get(label)
+                            if m is None:
+                                continue  # miner unreachable this cycle — keep waiting
+                            p = pending[label]
+                            if bool(m["running"]) == p["want"]:
                                 if bot:
-                                    bot.send("⚠️ Couldn't confirm the miner changed state — "
-                                             "please check it.")
-                                with state_lock:
-                                    state["miner_cmd_pending"] = None
+                                    if p["want"]:
+                                        bot.send(f"✅ <b>{label} is ON</b> — confirmed running.")
+                                    else:
+                                        bot.send(f"🛑 <b>{label} is OFF</b> — disabled until midnight "
+                                                 f"(or until you start it again).")
+                                pending.pop(label, None)
+                                confirmed_any = True
                             else:
-                                with state_lock:
-                                    state["miner_cmd_pending"] = pending
+                                p["cycles"] += 1
+                                if p["cycles"] >= 6:
+                                    if bot:
+                                        bot.send(f"⚠️ Couldn't confirm {label} changed state — "
+                                                 f"please check it.")
+                                    pending.pop(label, None)
+                        if confirmed_any:
+                            notify_state["prev_mining"] = actually_mining
+                        with state_lock:
+                            state["miner_cmd_pending"] = pending or None
 
                     # Hysteresis: smart start uses single threshold; normal mode uses on/off buffer
                     if smart_active:
@@ -740,13 +853,12 @@ def control_loop() -> None:
                     else:
                         desired_mining = soc >= effective_soc_on
 
-                    # Manual hold (via /stopMiner or dashboard Stop) overrides all
-                    # automatic control and keeps the miner off until local midnight.
-                    if miner_hold_active:
-                        desired_mining = False
+                    # (Per-miner manual hold is applied in phase 3 below, so a
+                    # held miner stays off while the other still follows the
+                    # shared decision.)
 
                     # EOD target override: project SOC at end of solar day and stop
-                    # the miner early if running would cause us to miss the target.
+                    # the miners early if running would cause us to miss the target.
                     eod_enabled = bool(settings.get("eod_soc_target_enabled", False))
                     eod_target  = float(settings.get("eod_soc_target") or 80.0)
                     battery_kwh = float(settings.get("battery_capacity_kwh") or 0.0)
@@ -782,33 +894,28 @@ def control_loop() -> None:
                         state["eod_projected_without"] = eod_projected_without
                         state["eod_protecting"]        = eod_protecting
 
-                    if actually_mining != desired_mining:
-                        if desired_mining:
-                            try:
-                                client.start_mining()
-                                action = "started"
-                            except LuxOsError:
-                                _clear_luxos_client()
-                                try:
-                                    client = get_or_create_luxos(miner_ip)
-                                    client.start_mining()
-                                    action = "started"
-                                except LuxOsError as e2:
-                                    error_str = (error_str or "") + f" | Miner start error: {e2}"
-                                    action = "error_starting"
-                        else:
-                            try:
-                                client.stop_mining()
-                                action = "stopped"
-                            except LuxOsError:
-                                _clear_luxos_client()
-                                try:
-                                    client = get_or_create_luxos(miner_ip)
-                                    client.stop_mining()
-                                    action = "stopped"
-                                except LuxOsError as e2:
-                                    error_str = (error_str or "") + f" | Miner stop error: {e2}"
-                                    action = "error_stopping"
+                    # Phase 3 — drive each reachable miner to the shared desired
+                    # state, except a manually-held miner is forced off.
+                    for label, ip in miners:
+                        m = per_miner[label]
+                        if not m["reachable"]:
+                            continue
+                        md = desired_mining and not miner_hold.get(label)
+                        if bool(m["running"]) != md:
+                            ok, err = _apply_miner(ip, md)
+                            if ok:
+                                m["action"] = "started" if md else "stopped"
+                            else:
+                                m["action"] = "error_starting" if md else "error_stopping"
+                                verb = "start" if md else "stop"
+                                error_str = (error_str or "") + f" | {label} {verb} error: {err}"
+
+                    # Representative aggregate action for the history row.
+                    acts = {m["action"] for m in reachable.values()}
+                    for candidate in ("started", "stopped", "error_starting", "error_stopping"):
+                        if candidate in acts:
+                            action = candidate
+                            break
                     else:
                         action = "none"
 
@@ -825,14 +932,7 @@ def control_loop() -> None:
                         smart_hold_active=smart_hold_active,
                     )
 
-                except LuxOsError as e:
-                    error_str = (error_str or "") + f" | Miner error: {e}"
-                    action = "error"
-                except Exception as e:
-                    error_str = (error_str or "") + f" | Miner unexpected error: {e}"
-                    action = "error"
-
-            elif not miner_ip and error_str is None:
+            elif not miners and error_str is None:
                 error_str = "Miner IP not configured"
 
             # ── Dehumidifier auto control ─────────────────────────
@@ -904,9 +1004,23 @@ def control_loop() -> None:
 
             now_str = datetime.now(timezone.utc).isoformat()
 
+            # Per-miner snapshot for the dashboard (only when we actually polled them).
+            miners_snapshot = {
+                label: {
+                    "running":      m["running"],
+                    "hashrate_mhs": m["hashrate_mhs"],
+                    "reachable":    m["reachable"],
+                    "error":        m["error"],
+                    "hold":         miner_hold.get(label, False),
+                }
+                for label, m in per_miner.items()
+            } if per_miner else None
+
             with state_lock:
                 state["readings"]          = readings
                 state["miner_running"]     = miner_running
+                if miners_snapshot is not None:
+                    state["miners"]        = miners_snapshot
                 state["last_updated"]      = now_str
                 state["effective_soc_on"]  = effective_soc_on
                 state["smart_start_active"] = smart_active
@@ -1018,6 +1132,7 @@ def _build_info_message() -> str:
     with state_lock:
         readings      = state.get("readings")
         miner_running = state.get("miner_running")
+        miners        = dict(state.get("miners") or {})
         miner_hold    = state.get("miner_hold_active")
         smart_active  = state.get("smart_start_active")
         pool          = state.get("pool") or {}
@@ -1044,7 +1159,20 @@ def _build_info_message() -> str:
         miner_str += " — disabled until midnight"
     elif smart_active:
         miner_str += " 🧠"
-    lines.append(f"⛏ Miner: <b>{miner_str}</b>")
+    lines.append(f"⛏ Miners: <b>{miner_str}</b>")
+    # Per-miner breakdown when more than one is configured.
+    if len(miners) > 1:
+        for label in sorted(miners):
+            m = miners[label]
+            if not m.get("reachable"):
+                per_str = "unreachable ⚠️"
+            elif m.get("running") is None:
+                per_str = "unknown"
+            else:
+                per_str = "ON ⛏" if m.get("running") else "OFF 💤"
+            if m.get("hold"):
+                per_str += " (held until midnight)"
+            lines.append(f"   • {label}: {per_str}")
 
     if dehum_power is None:
         dehum_str = "unknown"
@@ -1165,8 +1293,16 @@ def api_status():
     local_today = (datetime.now(timezone.utc) + timedelta(seconds=tz_offset)).date().isoformat()
     snapshot["smart_hold_active"] = bool(settings.get("smart_hold_date")) and \
         settings.get("smart_hold_date") == local_today
-    snapshot["miner_hold_active"] = bool(settings.get("miner_hold_date")) and \
-        settings.get("miner_hold_date") == local_today
+    # Per-miner hold, derived from settings so a Stop/Start click shows instantly.
+    hold = _miner_hold_map(settings)
+    miners_snap = dict(snapshot.get("miners") or {})
+    for label, row in miners_snap.items():
+        row = dict(row)
+        row["hold"] = hold.get(label, False)
+        miners_snap[label] = row
+    snapshot["miners"] = miners_snap
+    # Aggregate flag (kept for legacy consumers): held only when ALL miners are.
+    snapshot["miner_hold_active"] = bool(hold) and all(hold.values())
     snapshot["app_version"] = APP_VERSION
     return jsonify(snapshot)
 
@@ -1324,7 +1460,7 @@ def api_post_settings():
         "smart_soc_on_threshold", "smart_soc_off_threshold",
         "sunny_hours_threshold", "radiation_threshold_wm2", "smart_min_pv_w",
         "location_lat", "location_lon",
-        "battery_capacity_kwh", "pv_peak_kw", "miner_power_w",
+        "battery_capacity_kwh", "pv_peak_kw", "miner_power_w", "miner2_power_w",
         "eod_soc_target", "dehum_excess_threshold_w", "dehum_version",
         "dehum_min_run_minutes", "dehum_min_off_minutes", "dehum_manual_override_hours",
         "api_fail_cycles",
@@ -1374,20 +1510,28 @@ def api_geocode():
     return jsonify(result)
 
 
+def _miner_target() -> Optional[str]:
+    """Which miner a start/stop request targets. Body/query {"miner": "X1"} —
+    absent or "all" means every configured miner."""
+    data = request.get_json(silent=True) or {}
+    tgt = (data.get("miner") or request.args.get("miner") or "").strip().upper()
+    return tgt if tgt in ("X1", "X2") else None
+
+
 @app.route("/api/miner/start", methods=["POST"])
 def api_miner_start():
-    ok, err = _do_miner_start()
+    ok, err = _do_miner_start(_miner_target())
     if ok:
         return jsonify({"ok": True})
-    return jsonify({"error": err}), 400 if err == "Miner IP not configured" else 500
+    return jsonify({"error": err}), 400 if (err or "").endswith("not configured") else 500
 
 
 @app.route("/api/miner/stop", methods=["POST"])
 def api_miner_stop():
-    ok, err = _do_miner_stop()
+    ok, err = _do_miner_stop(_miner_target())
     if ok:
         return jsonify({"ok": True})
-    return jsonify({"error": err}), 400 if err == "Miner IP not configured" else 500
+    return jsonify({"error": err}), 400 if (err or "").endswith("not configured") else 500
 
 
 @app.route("/api/smart/hold", methods=["POST"])
@@ -1411,22 +1555,36 @@ def api_smart_hold():
 
 @app.route("/api/miner/quick")
 def api_miner_quick():
-    """Direct poll of the miner — bypasses control loop for fast status updates."""
-    try:
-        settings = get_settings()
-        miner_ip = settings.get("miner_ip") or os.getenv("LUXOS_MINER_IP", "")
-        if not miner_ip:
-            return jsonify({"error": "Miner IP not configured"}), 400
-        client = get_or_create_luxos(miner_ip)
-        mining = client.is_mining()
-        hashrate_mhs = client.last_hashrate_mhs
-        with state_lock:
-            state["miner_running"] = mining
-        return jsonify({"mining": mining, "hashrate_mhs": hashrate_mhs})
-    except LuxOsError as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    """Direct poll of every miner — bypasses the control loop for fast status
+    updates after a manual start/stop."""
+    settings = get_settings()
+    miners = _configured_miners(settings)
+    if not miners:
+        return jsonify({"error": "Miner IP not configured"}), 400
+
+    per = {}
+    for label, ip in miners:
+        per[label] = _read_miner(ip)  # never raises
+
+    hold = _miner_hold_map(settings)
+    reachable = [m for m in per.values() if m["reachable"]]
+    mining = any(bool(m["running"]) for m in reachable) if reachable else None
+    hashrate_mhs = sum(m["hashrate_mhs"] or 0.0 for m in reachable)
+
+    miners_out = {
+        label: {
+            "running":      m["running"],
+            "hashrate_mhs": m["hashrate_mhs"],
+            "reachable":    m["reachable"],
+            "error":        m["error"],
+            "hold":         hold.get(label, False),
+        }
+        for label, m in per.items()
+    }
+    with state_lock:
+        state["miner_running"] = mining
+        state["miners"] = miners_out
+    return jsonify({"mining": mining, "hashrate_mhs": hashrate_mhs, "miners": miners_out})
 
 
 @app.route("/api/telegram/test", methods=["POST"])
