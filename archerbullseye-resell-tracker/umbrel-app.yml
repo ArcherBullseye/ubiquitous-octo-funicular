@@ -4,7 +4,7 @@ name: Resell Tracker
 tagline: Track retail arbitrage buys, sells, and profits
 icon: https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 category: finance
-version: "1.3.11"
+version: "1.3.12"
 port: 3001
 description: >-
   Resell Tracker is a retail arbitrage management app that runs entirely on your Umbrel home server.
@@ -45,9 +45,10 @@ repo: https://github.com/ArcherBullseye/resell-tracker
 support: https://github.com/ArcherBullseye/resell-tracker/issues
 dependencies: []
 releaseNotes: >-
-  v1.3.11: Extension scanner: Lowe's now uses JSON-LD extraction (proven
-  reliable via bookmarklet tests); Nao=N pagination for Lowe's; auto-scan
-  stops correctly when a page returns 0 products instead of looping forever.
+  v1.3.12: Extension all-pages scan rebuilt to match bookmarklet approach —
+  Lowe's stays on page 1 and fetches subsequent pages via HTTP with credentials
+  (JSON-LD only exists in server HTML, not after React routing). HD reads Apollo
+  cache in one shot. TSC/Walmart navigate page by page with polling.
 path: ""
 defaultUsername: ""
 defaultPassword: ""
