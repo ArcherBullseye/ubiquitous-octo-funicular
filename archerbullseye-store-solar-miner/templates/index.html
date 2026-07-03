@@ -165,6 +165,14 @@
     .miner-row .m-btns button { padding: 1px 7px; font-size: 11px; font-weight: 700;
                                 border-radius: 4px; line-height: 1.3; }
     .miner-row .m-btns button:disabled { opacity: .35; cursor: default; }
+    /* Mining Control spans two columns for the per-miner power/profile readout. */
+    .mining-control-card { grid-column: span 2; }
+    /* Combined Load / Backup card: two stacked metrics. */
+    .lb-split { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; }
+    .lb-sub { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .lb-val { font-size: clamp(15px, 1.4vw, 20px); font-weight: 700; margin-top: 1px; }
+    /* Per-miner profile/power detail line inside a miner row. */
+    .miner-row .m-power { color: var(--muted); font-size: 11px; white-space: nowrap; flex-shrink: 0; }
 
     /* ── Info row (sats + btc price + weather) ── */
     /* Same 7-col grid as power-grid so cards align perfectly */
@@ -576,16 +584,20 @@
     </div>
 
     <div class="card">
-      <div class="card-label" style="color:#f43f5e;">🏠 Load</div>
-      <div class="card-value" id="load-power">—</div>
+      <div class="card-label" style="color:#f43f5e;">🏠 Load / Backup</div>
+      <div class="lb-split">
+        <div>
+          <div class="lb-sub">Load</div>
+          <div class="lb-val" id="load-power">—</div>
+        </div>
+        <div>
+          <div class="lb-sub">Backup</div>
+          <div class="lb-val" id="backup-power">—</div>
+        </div>
+      </div>
     </div>
 
-    <div class="card">
-      <div class="card-label" style="color:#a78bfa;">⛏ Miner</div>
-      <div class="card-value" id="backup-power">—</div>
-    </div>
-
-    <div class="card">
+    <div class="card mining-control-card">
       <div class="card-label">🎛 Mining Control</div>
       <div id="miners-list"></div>
       <div class="card-sub" id="miner-threshold" style="margin-top:8px;">SOC ON: —</div>
@@ -778,6 +790,11 @@
             <label>Miner X2 — Power Draw (W)</label>
             <input type="number" id="s-miner2_power_w" step="10" min="0" placeholder="e.g. 3450" />
             <div class="form-hint">Combined draw is used to estimate whether PV output can offset mining load.</div>
+          </div>
+          <div class="form-group">
+            <label>Ramp ceiling — max power per miner (W)</label>
+            <input type="number" id="s-miner_max_watts" step="10" min="0" placeholder="e.g. 2960" />
+            <div class="form-hint">The surplus-tracking ramp never pushes a miner above the profile nearest this wattage (default 2960 W = the S19j Pro's "default" step).</div>
           </div>
         </div>
 
@@ -1709,7 +1726,7 @@
         'smart_soc_on_threshold','smart_soc_off_threshold',
         'sunny_hours_threshold','radiation_threshold_wm2','smart_min_pv_w',
         'location_lat','location_lon',
-        'battery_capacity_kwh','pv_peak_kw','miner_power_w','miner2_power_w',
+        'battery_capacity_kwh','pv_peak_kw','miner_power_w','miner2_power_w','miner_max_watts',
         'eod_soc_target', 'dehum_excess_threshold_w', 'dehum_version',
         'dehum_min_run_minutes', 'dehum_min_off_minutes', 'dehum_manual_override_hours',
         'api_fail_cycles',
@@ -1798,6 +1815,7 @@
       pv_peak_kw:              Number(el('s-pv_peak_kw').value),
       miner_power_w:           Number(el('s-miner_power_w').value),
       miner2_power_w:          Number(el('s-miner2_power_w').value),
+      miner_max_watts:         Number(el('s-miner_max_watts').value) || 2960,
       api_fail_action:         el('s-api_fail_action').value,
       api_fail_cycles:         Number(el('s-api_fail_cycles').value),
       lux_pool_api_key:        el('s-lux_pool_api_key').value,
@@ -2018,12 +2036,15 @@
 
   // ── Miner controls ───────────────────────────────────────────
   let _fastPoll = null;
+  let _minerProfiles = null;      // latest /api/miner/profiles payload (per-miner ladder + current)
+  let _lastMinersStatus = null;   // latest status, kept so profile fetches can re-render
 
   // Render the per-miner rows (X1, X2) inside the Mining Control card, each with
   // its own Start/Stop buttons. Stop pauses just that miner until midnight.
   function _renderMiners(miners, checking) {
     const list = el('miners-list');
     if (!list) return;
+    if (!checking) _lastMinersStatus = miners;
     const present = (miners && Object.keys(miners).length) ? Object.keys(miners).sort() : [];
     if (!present.length && !checking) {
       list.innerHTML = '<div class="miner-row"><span class="m-state" style="color:var(--muted)">No miner configured</span></div>';
@@ -2032,7 +2053,8 @@
     const labels = present.length ? present : ['X1'];
     list.innerHTML = labels.map(label => {
       const m = (miners && miners[label]) || {};
-      let stateHtml, hr = '';
+      const prof = _minerProfiles && _minerProfiles[label];
+      let stateHtml;
       // ︎ forces text (monochrome, compact) rendering of the ▶ / ■ glyphs.
       if (checking) {
         stateHtml = '<span style="color:var(--amber)">checking…</span>';
@@ -2048,17 +2070,36 @@
       } else {
         stateHtml = '<span style="color:var(--muted)">?</span>';
       }
-      if (m.reachable !== false && m.hashrate_mhs) {
-        hr = (m.hashrate_mhs / 1e6).toFixed(1) + ' TH/s';  // MHS → TH/s
+      // Detail: current power draw (from active profile) + live hashrate.
+      const parts = [];
+      if (!checking && m.reachable !== false && m.running === true
+          && prof && prof.current && prof.current.watts) {
+        parts.push('≈' + (prof.current.watts / 1000).toFixed(2) + ' kW');
+        if (prof.current.frequency) parts.push(prof.current.frequency + ' MHz');
       }
+      if (m.reachable !== false && m.hashrate_mhs) {
+        parts.push((m.hashrate_mhs / 1e6).toFixed(1) + ' TH/s');  // MHS → TH/s
+      }
+      const detail = parts.join(' · ');
       const dis = checking ? 'disabled' : '';
       const btns = `<span class="m-btns">`
         + `<button class="btn-green" ${dis} onclick="minerStart('${label}')" title="Start ${label}">▶︎</button>`
         + `<button class="btn-red" ${dis} onclick="minerStop('${label}')" title="Stop ${label} until midnight">■︎</button>`
         + `</span>`;
       return `<div class="miner-row"><span class="m-name">${label}</span>`
-           + `<span class="m-state">${stateHtml}</span><span class="m-hr">${hr}</span>${btns}</div>`;
+           + `<span class="m-state">${stateHtml}</span><span class="m-hr">${detail}</span>${btns}</div>`;
     }).join('');
+  }
+
+  // Fetch each miner's profile ladder + current draw, then re-render the rows.
+  async function loadMinerProfiles() {
+    try {
+      const r = await fetch('/api/miner/profiles');
+      if (!r.ok) return;
+      const d = await r.json();
+      _minerProfiles = d.miners || null;
+      if (_lastMinersStatus) _renderMiners(_lastMinersStatus, false);
+    } catch (e) { /* non-fatal */ }
   }
 
   // Poll the targeted miner (or the aggregate) until it reaches desiredState.
@@ -2081,6 +2122,7 @@
             clearInterval(_fastPoll);
             _fastPoll = null;
             refresh();
+            loadMinerProfiles();
           }
         }
       } catch(e) {
@@ -2161,9 +2203,9 @@
     } catch(e) { alert('Request failed: ' + e); }
   }
 
-  setInterval(() => { refresh(); loadHistory(); loadDailySats(); }, 30000);
+  setInterval(() => { refresh(); loadHistory(); loadDailySats(); loadMinerProfiles(); }, 30000);
 
-  window.onload = () => { refresh(); loadHistory(); loadDailySats(); };
+  window.onload = () => { refresh(); loadHistory(); loadDailySats(); loadMinerProfiles(); };
 </script>
 </body>
 </html>

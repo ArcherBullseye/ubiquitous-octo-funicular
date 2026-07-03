@@ -90,6 +90,40 @@ class LuxOsClient:
             for d in devs
         )
 
+    def get_config(self) -> dict:
+        """Return the miner's CONFIG dict (includes current Profile, ProfileStep,
+        ATM/power-target capability flags). Read-only, no session required."""
+        resp = self._send("config")
+        if not self._status_ok(resp):
+            msg = resp.get("STATUS", [{}])[0].get("Msg", "unknown")
+            raise LuxOsError(f"config command failed: {msg}")
+        cfg = resp.get("CONFIG", [])
+        return cfg[0] if cfg else {}
+
+    def get_profiles(self) -> list[dict]:
+        """Return the miner's performance-profile ladder, normalized. Each entry:
+        name, step, frequency (MHz), hashrate_ths, watts (LuxOS estimate),
+        voltage, is_dynamic. Read-only, no session required.
+
+        This is the dimmable-load ladder the surplus-tracking controller drives
+        via profileset (from sleep at 0 W up through each rung)."""
+        resp = self._send("profiles")
+        if not self._status_ok(resp):
+            msg = resp.get("STATUS", [{}])[0].get("Msg", "unknown")
+            raise LuxOsError(f"profiles command failed: {msg}")
+        out = []
+        for p in resp.get("PROFILES", []):
+            out.append({
+                "name":         p.get("Profile Name"),
+                "step":         p.get("Step"),
+                "frequency":    p.get("Frequency"),
+                "hashrate_ths": p.get("Hashrate"),
+                "watts":        p.get("Watts"),
+                "voltage":      p.get("Voltage"),
+                "is_dynamic":   p.get("IsDynamic"),
+            })
+        return out
+
     def start_mining(self) -> None:
         """Wake the miner up from sleep/curtailment."""
         sid = self._ensure_session()

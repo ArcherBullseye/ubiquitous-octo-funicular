@@ -23,7 +23,7 @@ from dehumidifier import DehumidifierClient
 
 load_dotenv()
 
-APP_VERSION = "1.5.13"
+APP_VERSION = "1.5.14"
 
 app = Flask(__name__)
 
@@ -1460,7 +1460,7 @@ def api_post_settings():
         "smart_soc_on_threshold", "smart_soc_off_threshold",
         "sunny_hours_threshold", "radiation_threshold_wm2", "smart_min_pv_w",
         "location_lat", "location_lon",
-        "battery_capacity_kwh", "pv_peak_kw", "miner_power_w", "miner2_power_w",
+        "battery_capacity_kwh", "pv_peak_kw", "miner_power_w", "miner2_power_w", "miner_max_watts",
         "eod_soc_target", "dehum_excess_threshold_w", "dehum_version",
         "dehum_min_run_minutes", "dehum_min_off_minutes", "dehum_manual_override_hours",
         "api_fail_cycles",
@@ -1585,6 +1585,46 @@ def api_miner_quick():
         state["miner_running"] = mining
         state["miners"] = miners_out
     return jsonify({"mining": mining, "hashrate_mhs": hashrate_mhs, "miners": miners_out})
+
+
+def _read_miner_profiles(ip: str) -> dict:
+    """Read a miner's profile ladder + current profile (read-only, never raises).
+    Foundation for the surplus-tracking ramp controller."""
+    try:
+        client = get_or_create_luxos(ip)
+        cfg = client.get_config()
+        ladder = client.get_profiles()
+        cur_name = cfg.get("Profile")
+        cur_step = cfg.get("ProfileStep")
+        current = next((p for p in ladder if p["name"] == cur_name), None)
+        watts = [p["watts"] for p in ladder if isinstance(p.get("watts"), (int, float)) and p["watts"] > 0]
+        return {
+            "reachable":       True,
+            "current_name":    cur_name,
+            "current_step":    cur_step,
+            "current":         current,
+            "min_watts":       min(watts) if watts else None,
+            "max_watts":       max(watts) if watts else None,
+            "power_target_supported": bool(cfg.get("IsPowerTargetSupported")),
+            "atm_enabled":     bool(cfg.get("IsAtmEnabled")),
+            "ladder":          ladder,
+            "error":           None,
+        }
+    except Exception as e:
+        return {"reachable": False, "current": None, "ladder": [], "error": str(e)}
+
+
+@app.route("/api/miner/profiles")
+def api_miner_profiles():
+    """Read-only: each configured miner's dimmable profile ladder + current step.
+    Two-miner-native — reports whichever miners answer; an offline one comes back
+    reachable=False so the UI/controller just works with what's up."""
+    settings = get_settings()
+    miners = _configured_miners(settings)
+    if not miners:
+        return jsonify({"error": "Miner IP not configured"}), 400
+    out = {label: _read_miner_profiles(ip) for label, ip in miners}
+    return jsonify({"miners": out})
 
 
 @app.route("/api/telegram/test", methods=["POST"])
