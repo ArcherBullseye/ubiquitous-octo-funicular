@@ -23,7 +23,7 @@ from dehumidifier import DehumidifierClient
 
 load_dotenv()
 
-APP_VERSION = "1.5.16"
+APP_VERSION = "1.5.17"
 
 app = Flask(__name__)
 
@@ -389,10 +389,10 @@ def _apply_ramp(order: list, plan: dict) -> list:
     per = plan.get("per_miner", {})
     for label, ip in order:
         p = per.get(label)
-        if not p or p.get("held"):
+        if not p:
             continue
         try:
-            if p.get("sleep"):
+            if p.get("sleep"):  # below the floor OR manually held → keep it off
                 _apply_miner(ip, False)  # curtail sleep
                 continue
             client = get_or_create_luxos(ip)
@@ -1283,6 +1283,19 @@ def weather_loop() -> None:
             lon = float(settings.get("location_lon") or 0.0)
             radiation_threshold = float(settings.get("radiation_threshold_wm2") or 300.0)
 
+            # Self-heal: if a location (ZIP) is set but coordinates are missing
+            # (e.g. the Search step was skipped, or a save zeroed them), resolve
+            # them here so the forecast comes back without any user action.
+            name = str(settings.get("location_name") or "").strip()
+            if lat == 0.0 and lon == 0.0 and name:
+                try:
+                    geo = do_geocode(name)
+                    if geo and geo.get("lat") and geo.get("lon"):
+                        lat, lon = float(geo["lat"]), float(geo["lon"])
+                        update_settings({"location_lat": lat, "location_lon": lon})
+                except Exception as e:
+                    print(f"Weather geocode retry error: {e}")
+
             if lat != 0.0 or lon != 0.0:
                 raw = get_weather(lat, lon)
                 if raw is not None:
@@ -1702,6 +1715,18 @@ def api_post_settings():
         if k in data:
             val = data[k]
             data[k] = val if isinstance(val, bool) else str(val).lower() in ("true", "1", "yes", "on")
+
+    # If a location name/ZIP is set but coordinates are missing/zero, resolve
+    # them server-side so weather keeps working even if Search was skipped.
+    _name = str(data.get("location_name") or "").strip()
+    if _name and (not float(data.get("location_lat") or 0) or not float(data.get("location_lon") or 0)):
+        try:
+            geo = do_geocode(_name)
+            if geo and geo.get("lat") and geo.get("lon"):
+                data["location_lat"] = float(geo["lat"])
+                data["location_lon"] = float(geo["lon"])
+        except Exception:
+            pass
 
     update_settings(data)
 
