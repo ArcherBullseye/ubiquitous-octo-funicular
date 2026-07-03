@@ -167,12 +167,15 @@
     .miner-row .m-btns button:disabled { opacity: .35; cursor: default; }
     /* Mining Control spans two columns for the per-miner power/profile readout. */
     .mining-control-card { grid-column: span 2; }
-    /* Combined Home / Miner card: two stacked rows, label left, value right. */
-    .lb-rows { display: flex; flex-direction: column; justify-content: center;
-               gap: 12px; height: 100%; }
-    .lb-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-    .lb-name { font-size: 13px; font-weight: 600; white-space: nowrap; }
-    .lb-val { font-size: clamp(16px, 1.5vw, 22px); font-weight: 700; }
+    /* Combined Home / Miner card: bigger titles, value staggered right + down,
+       caption below. */
+    .hm-rows { display: flex; flex-direction: column; justify-content: center;
+               gap: 16px; height: 100%; }
+    .hm-title { font-size: 15px; font-weight: 700; white-space: nowrap; }
+    .hm-value { font-size: clamp(20px, 1.9vw, 26px); font-weight: 800;
+                margin: 3px 0 0 26px; line-height: 1.05; }
+    .hm-cap { font-size: 10px; color: var(--muted); text-transform: uppercase;
+              letter-spacing: .05em; margin-left: 26px; margin-top: 1px; }
     /* Per-miner profile/power detail line inside a miner row. */
     .miner-row .m-power { color: var(--muted); font-size: 11px; white-space: nowrap; flex-shrink: 0; }
     /* Stepped power bar: one segment per profile rung, filled to current level. */
@@ -593,14 +596,16 @@
     </div>
 
     <div class="card">
-      <div class="lb-rows">
-        <div class="lb-row">
-          <span class="lb-name" style="color:#f43f5e;">🏠 Home</span>
-          <span class="lb-val" id="load-power">—</span>
+      <div class="hm-rows">
+        <div class="hm-block">
+          <div class="hm-title" style="color:#f43f5e;">🏠 Home</div>
+          <div class="hm-value" id="load-power">—</div>
+          <div class="hm-cap">house load</div>
         </div>
-        <div class="lb-row">
-          <span class="lb-name" style="color:#a78bfa;">⛏ Miner</span>
-          <span class="lb-val" id="backup-power">—</span>
+        <div class="hm-block">
+          <div class="hm-title" style="color:#a78bfa;">⛏ Miner</div>
+          <div class="hm-value" id="backup-power">—</div>
+          <div class="hm-cap">mining load</div>
         </div>
       </div>
     </div>
@@ -2109,11 +2114,13 @@
 
   // Build the stepped power bar: one segment per profile rung, filled to the
   // current level, with the ramp's target rung outlined (when a plan exists).
-  function _stepBar(prof, rampMiner) {
+  function _stepBar(prof, rampMiner, running) {
     const ladder = prof && prof.ladder;
     if (!ladder || !ladder.length) return '';
+    // Fill reflects ACTUAL draw — an off/sleeping miner shows an empty bar even
+    // though it still reports a configured profile.
     const curName = prof.current_name;
-    const curIdx = ladder.findIndex(p => p.name === curName);
+    const curIdx = running ? ladder.findIndex(p => p.name === curName) : -1;
     const tgtName = rampMiner && rampMiner.target_profile;
     const tgtIdx = tgtName ? ladder.findIndex(p => p.name === tgtName) : -1;
     const boxes = ladder.map((p, i) => {
@@ -2177,7 +2184,9 @@
         + `<span class="m-state">${stateHtml}</span><span class="m-hr">${hr}</span>${btns}</div>`;
       // Stepped power bar (one box per profile rung) when the miner is reachable.
       const rampMiner = _ramp && _ramp.per_miner && _ramp.per_miner[label];
-      const steps = (!checking && m.reachable !== false) ? _stepBar(prof, rampMiner) : '';
+      // Only fill the bar when the miner is actually mining (not held/sleeping).
+      const isRunning = (m.running === true) && !m.hold;
+      const steps = (!checking && m.reachable !== false) ? _stepBar(prof, rampMiner, isRunning) : '';
       return row + steps;
     }).join('');
   }
