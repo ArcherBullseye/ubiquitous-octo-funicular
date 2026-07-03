@@ -23,7 +23,7 @@ from dehumidifier import DehumidifierClient
 
 load_dotenv()
 
-APP_VERSION = "1.5.14"
+APP_VERSION = "1.5.15"
 
 app = Flask(__name__)
 
@@ -31,6 +31,7 @@ state = {
     "readings": None,
     "miner_running": None,   # aggregate: True if ANY reachable miner is on
     "miners": {},            # per-miner: {"X1": {running, hashrate_mhs, reachable, error}, ...}
+    "ramp": None,            # surplus-tracking ramp plan (see _compute_ramp)
     "weather": None,
     "pool": None,
     "btc_price_usd": None,
@@ -243,6 +244,173 @@ def _apply_miner(ip: str, desired: bool) -> tuple:
         return False, str(e)
 
 
+# ── Power-profile ramp (surplus tracking) ────────────────────────
+#
+# The miners are a dimmable load. Each cycle we read the Solis grid + battery
+# flow and pick each reachable miner's profile so total miner draw soaks the
+# available surplus — without exporting to the grid and without stealing the
+# battery charge we still need to reach a full battery by end of solar day.
+#
+#   headroom_w = grid_power_w + (battery_power_w - charge_reserve_w)
+#     grid  > 0  → exporting  → room to draw more
+#     grid  < 0  → importing  → must shed
+#     battery above the charge reserve → room to draw more (charge a bit slower)
+#
+# See _configured_miners for the X1→X2 priority fill order.
+
+RAMP_DEADBAND_W = 200.0      # ignore |headroom| smaller than this (anti-chatter)
+RAMP_UP_STEP_W = 700.0       # max power increase per cycle (slow ramp up)
+_ladder_cache: Dict[str, list] = {}   # ip -> profile ladder (static per miner)
+# Total watts the ramp commanded last cycle. Measured backup_power_w lags a
+# freshly-set profile by a cycle or two, so when armed we treat the commanded
+# level as a floor for "current draw" — otherwise the lag makes us over-ramp.
+_ramp_last_commanded_w = 0.0
+
+
+def _get_ladder(ip: str) -> list:
+    """Fetch + cache a miner's profile ladder (rungs with numeric watts, sorted).
+    The ladder is static per miner model, so we fetch it once."""
+    cached = _ladder_cache.get(ip)
+    if cached:
+        return cached
+    try:
+        client = get_or_create_luxos(ip)
+        rungs = [p for p in client.get_profiles()
+                 if isinstance(p.get("watts"), (int, float)) and p["watts"] > 0]
+        rungs.sort(key=lambda p: p["watts"])
+        if rungs:
+            _ladder_cache[ip] = rungs
+        return rungs
+    except Exception:
+        return []
+
+
+def _pick_profile(ladder: list, target_watts: float, cap_watts: float) -> Optional[dict]:
+    """Highest rung whose watts ≤ min(target, cap). None → below the floor (sleep)."""
+    limit = min(target_watts, cap_watts)
+    eligible = [p for p in ladder if p["watts"] <= limit]
+    return eligible[-1] if eligible else None  # ladder is ascending
+
+
+def _charge_reserve_w(settings: dict, soc: float, weather: Optional[dict]) -> float:
+    """Battery charging power to reserve so SOC still reaches the target by end of
+    the solar day. 0 once we're at/above target or when we can't compute it."""
+    battery_kwh = float(settings.get("battery_capacity_kwh") or 0.0)
+    if battery_kwh <= 0:
+        return 0.0
+    if bool(settings.get("eod_soc_target_enabled", False)):
+        target_soc = float(settings.get("eod_soc_target") or 98.0)
+    else:
+        target_soc = 98.0
+    if soc >= target_soc:
+        return 0.0
+    remaining_hours = float((weather or {}).get("remaining_sunny_hours", 0) or 0)
+    remaining_hours = max(remaining_hours, 0.25)  # guard div-by-zero / last-light
+    margin = float(settings.get("ramp_charge_margin") or 1.25)
+    energy_needed_kwh = (target_soc - soc) / 100.0 * battery_kwh
+    return max(0.0, energy_needed_kwh / remaining_hours * 1000.0 * margin)
+
+
+def _compute_ramp(settings: dict, readings: dict, weather: Optional[dict],
+                  order: list, held: dict, committed_w: float = 0.0) -> dict:
+    """Compute the ramp plan for this cycle (pure — no miner writes).
+
+    `order` is [(label, ip)] of reachable miners in priority order; `held` is
+    {label: bool}. `committed_w` is the total watts we commanded last cycle (used
+    as a floor for current draw when armed, since backup_power_w lags a new
+    profile). Returns the plan dict stored in state['ramp'] and (when armed)
+    applied by _apply_ramp."""
+    cap = float(settings.get("miner_max_watts") or 2960.0)
+    grid = float(readings.get("grid_power_w") or 0.0)
+    battery = float(readings.get("battery_power_w") or 0.0)
+    backup = float(readings.get("backup_power_w") or 0.0)
+    soc = float(readings.get("soc") or 0.0)
+
+    reserve = _charge_reserve_w(settings, soc, weather)
+    # Miners sit on the backup/EPS port, so backup_power_w is the measured total
+    # current miner draw — better feedforward than summing profile estimates.
+    # Use the commanded level as a floor so ramp lag doesn't cause overshoot.
+    current_total = max(0.0, backup, committed_w)
+    headroom = grid + (battery - reserve)
+
+    active = [(label, ip) for label, ip in order if not held.get(label)]
+    n = len(active)
+    # Lowest rung across active miners — the floor a miner must clear to run at all.
+    floor = 0.0
+    if active:
+        l0 = _get_ladder(active[0][1])
+        floor = l0[0]["watts"] if l0 else 0.0
+
+    raw_target = current_total + headroom
+    # Asymmetric: shed fast (jump straight down), ramp up slowly (bounded step).
+    if raw_target > current_total:
+        cap_up = current_total + RAMP_UP_STEP_W
+        if current_total < floor:
+            # Starting from sleep: allow reaching the floor so a miner can wake
+            # (the rate limit alone would strand it below the lowest profile).
+            cap_up = max(cap_up, floor)
+        raw_target = min(raw_target, cap_up)
+    target_total = max(0.0, min(raw_target, n * cap))
+
+    # Priority fill: X1 up to cap, then X2 with the remainder.
+    per = {}
+    remaining = target_total
+    for label, ip in active:
+        ladder = _get_ladder(ip)
+        prof = _pick_profile(ladder, remaining, cap) if ladder else None
+        if prof is None:
+            per[label] = {"target_watts": 0.0, "target_profile": None,
+                          "target_hashrate": 0.0, "sleep": True}
+        else:
+            per[label] = {"target_watts": prof["watts"], "target_profile": prof["name"],
+                          "target_hashrate": prof.get("hashrate_ths"), "sleep": False}
+            remaining -= prof["watts"]
+    for label, ip in order:  # held miners: shown as excluded
+        if label not in per:
+            per[label] = {"target_watts": 0.0, "target_profile": None,
+                          "target_hashrate": 0.0, "sleep": True, "held": True}
+
+    changed = abs(target_total - current_total) >= RAMP_DEADBAND_W
+    return {
+        "reserve_w": round(reserve),
+        "headroom_w": round(headroom),
+        "current_total_w": round(current_total),
+        "target_total_w": round(target_total),
+        "changed": changed,
+        "per_miner": per,
+    }
+
+
+def _apply_ramp(order: list, plan: dict) -> list:
+    """Drive each active miner to its planned profile (sleep, or wake + profileset).
+    Only called when the ramp is armed (ramp_enabled and not ramp_dry_run).
+    Skips redundant writes. Returns a list of error strings."""
+    errors = []
+    per = plan.get("per_miner", {})
+    for label, ip in order:
+        p = per.get(label)
+        if not p or p.get("held"):
+            continue
+        try:
+            if p.get("sleep"):
+                _apply_miner(ip, False)  # curtail sleep
+                continue
+            client = get_or_create_luxos(ip)
+            try:
+                cfg = client.get_config()
+                cur_profile = cfg.get("Profile")
+                awake = bool(cfg.get("IsPowerSupplyOn"))
+            except LuxOsError:
+                cur_profile, awake = None, False
+            if not awake:
+                client.start_mining()          # wake, then set the profile
+            if cur_profile != p["target_profile"]:
+                client.set_profile(p["target_profile"])
+        except Exception as e:
+            errors.append(f"{label}: {e}")
+    return errors
+
+
 # ── Telegram helpers ─────────────────────────────────────────────
 
 def _get_bot(settings: dict) -> Optional[TelegramBot]:
@@ -332,13 +500,16 @@ def _fmt_ths(mhs: float) -> str:
 def _send_notifications(settings: dict, soc: Optional[float], actually_mining: bool,
                         smart_active: bool, soc_on: float, effective_soc_on: float,
                         effective_soc_off: float, hashrate_mhs: float,
-                        smart_hold_active: bool = False) -> None:
+                        smart_hold_active: bool = False, ramp_armed: bool = False) -> None:
     bot = _get_bot(settings)
     if not bot:
         return
 
     # ── Miner ON / OFF ──────────────────────────────────────────
-    if settings.get("tg_miner_onoff") and notify_state["prev_mining"] is not None:
+    # Suppressed while the ramp is armed: it sleeps/wakes miners at dawn, dusk,
+    # and whenever surplus crosses the lowest-profile floor — those are normal
+    # ramp moves, not events worth alerting on.
+    if settings.get("tg_miner_onoff") and notify_state["prev_mining"] is not None and not ramp_armed:
         if actually_mining and not notify_state["prev_mining"] and soc is not None:
             smart_tag = " 🧠 <i>Smart Start</i>" if smart_active else ""
             bot.send(
@@ -398,18 +569,24 @@ def _send_notifications(settings: dict, soc: Optional[float], actually_mining: b
             notify_state["soc_full_notified"] = False
 
     # ── Hashrate drop ────────────────────────────────────────────
+    # Suppressed while the ramp is armed — dialing a miner down is a deliberate
+    # hashrate drop, not a fault. Keep the baseline current so it doesn't false-
+    # alarm the moment the ramp is disarmed.
     if settings.get("tg_hashrate_drop") and hashrate_mhs > 0 and actually_mining:
-        drop_pct = float(settings.get("tg_hashrate_drop_pct") or 25.0)
-        prev_hr = notify_state.get("prev_hashrate_mhs") or 0
-        if prev_hr > 0:
-            drop = (prev_hr - hashrate_mhs) / prev_hr * 100
-            if drop >= drop_pct:
-                bot.send(
-                    f"📉 <b>Hashrate dropped {drop:.0f}%</b>\n"
-                    f"{_fmt_ths(hashrate_mhs)} (was {_fmt_ths(prev_hr)})\n"
-                    f"Possible thermal throttling or board issue"
-                )
-        notify_state["prev_hashrate_mhs"] = hashrate_mhs
+        if ramp_armed:
+            notify_state["prev_hashrate_mhs"] = hashrate_mhs
+        else:
+            drop_pct = float(settings.get("tg_hashrate_drop_pct") or 25.0)
+            prev_hr = notify_state.get("prev_hashrate_mhs") or 0
+            if prev_hr > 0:
+                drop = (prev_hr - hashrate_mhs) / prev_hr * 100
+                if drop >= drop_pct:
+                    bot.send(
+                        f"📉 <b>Hashrate dropped {drop:.0f}%</b>\n"
+                        f"{_fmt_ths(hashrate_mhs)} (was {_fmt_ths(prev_hr)})\n"
+                        f"Possible thermal throttling or board issue"
+                    )
+            notify_state["prev_hashrate_mhs"] = hashrate_mhs
 
     # ── Sats milestone ───────────────────────────────────────────
     if settings.get("tg_sats_milestone"):
@@ -894,30 +1071,62 @@ def control_loop() -> None:
                         state["eod_projected_without"] = eod_projected_without
                         state["eod_protecting"]        = eod_protecting
 
-                    # Phase 3 — drive each reachable miner to the shared desired
-                    # state, except a manually-held miner is forced off.
-                    for label, ip in miners:
-                        m = per_miner[label]
-                        if not m["reachable"]:
-                            continue
-                        md = desired_mining and not miner_hold.get(label)
-                        if bool(m["running"]) != md:
-                            ok, err = _apply_miner(ip, md)
-                            if ok:
-                                m["action"] = "started" if md else "stopped"
-                            else:
-                                m["action"] = "error_starting" if md else "error_stopping"
-                                verb = "start" if md else "stop"
-                                error_str = (error_str or "") + f" | {label} {verb} error: {err}"
+                    # ── Phase 3: drive the miners ────────────────
+                    # Compute the surplus-tracking ramp plan (pure) for display;
+                    # only *drive* the profiles when it's enabled AND armed
+                    # (not dry-run). Otherwise the binary Smart Start / manual
+                    # logic governs, and the ramp plan is shown for observation.
+                    global _ramp_last_commanded_w
+                    ramp_enabled = bool(settings.get("ramp_enabled", False))
+                    ramp_dry_run = bool(settings.get("ramp_dry_run", True))
+                    # The armed path needs battery capacity to protect the charge —
+                    # without it there's no "full by EOD" half, so don't drive.
+                    ramp_cap_ok = float(settings.get("battery_capacity_kwh") or 0.0) > 0
+                    reach_order = [(label, ip) for label, ip in miners
+                                   if per_miner[label]["reachable"]]
+                    would_arm = bool(ramp_enabled and not ramp_dry_run and ramp_cap_ok)
+                    ramp_plan = None
+                    if ramp_enabled and reach_order:
+                        committed = _ramp_last_commanded_w if would_arm else 0.0
+                        ramp_plan = _compute_ramp(settings, readings, current_weather,
+                                                  reach_order, miner_hold, committed)
+                        ramp_plan["dry_run"] = ramp_dry_run
+                        ramp_plan["needs_battery_capacity"] = (ramp_enabled and not ramp_dry_run
+                                                               and not ramp_cap_ok)
+                    ramp_armed = bool(would_arm and ramp_plan)
+                    with state_lock:
+                        state["ramp"] = ramp_plan
 
-                    # Representative aggregate action for the history row.
-                    acts = {m["action"] for m in reachable.values()}
-                    for candidate in ("started", "stopped", "error_starting", "error_stopping"):
-                        if candidate in acts:
-                            action = candidate
-                            break
+                    if ramp_armed:
+                        for e in _apply_ramp(reach_order, ramp_plan):
+                            error_str = (error_str or "") + f" | ramp {e}"
+                        _ramp_last_commanded_w = ramp_plan["target_total_w"]
+                        action = "ramp"
                     else:
-                        action = "none"
+                        # Binary Smart Start / manual control (also the dry-run path):
+                        # drive each reachable miner to the shared desired state,
+                        # except a manually-held miner is forced off.
+                        _ramp_last_commanded_w = 0.0  # re-arm starts from measured draw
+                        for label, ip in miners:
+                            m = per_miner[label]
+                            if not m["reachable"]:
+                                continue
+                            md = desired_mining and not miner_hold.get(label)
+                            if bool(m["running"]) != md:
+                                ok, err = _apply_miner(ip, md)
+                                if ok:
+                                    m["action"] = "started" if md else "stopped"
+                                else:
+                                    m["action"] = "error_starting" if md else "error_stopping"
+                                    verb = "start" if md else "stop"
+                                    error_str = (error_str or "") + f" | {label} {verb} error: {err}"
+                        acts = {m["action"] for m in reachable.values()}
+                        for candidate in ("started", "stopped", "error_starting", "error_stopping"):
+                            if candidate in acts:
+                                action = candidate
+                                break
+                        else:
+                            action = "none"
 
                     # ── Telegram notifications ───────────────────
                     _send_notifications(
@@ -930,6 +1139,7 @@ def control_loop() -> None:
                         effective_soc_off=effective_soc_off,
                         hashrate_mhs=hashrate_mhs,
                         smart_hold_active=smart_hold_active,
+                        ramp_armed=ramp_armed,
                     )
 
             elif not miners and error_str is None:
@@ -1461,6 +1671,7 @@ def api_post_settings():
         "sunny_hours_threshold", "radiation_threshold_wm2", "smart_min_pv_w",
         "location_lat", "location_lon",
         "battery_capacity_kwh", "pv_peak_kw", "miner_power_w", "miner2_power_w", "miner_max_watts",
+        "ramp_charge_margin",
         "eod_soc_target", "dehum_excess_threshold_w", "dehum_version",
         "dehum_min_run_minutes", "dehum_min_off_minutes", "dehum_manual_override_hours",
         "api_fail_cycles",
@@ -1482,6 +1693,7 @@ def api_post_settings():
 
     bool_keys = [
         "smart_start_enabled", "eod_soc_target_enabled", "dehum_auto_enabled",
+        "ramp_enabled", "ramp_dry_run",
         "tg_miner_onoff", "tg_smart_start", "tg_api_failure",
         "tg_soc_low", "tg_soc_full", "tg_hashrate_drop",
         "tg_daily_summary", "tg_sats_milestone", "tg_sunny_day_ahead", "tg_weekly_recap",

@@ -33,6 +33,9 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "miner_power_w": 0.0,    # X1 power draw (W)
     "miner2_power_w": 0.0,   # X2 power draw (W)
     "miner_max_watts": 2960.0,  # ramp ceiling: controller never sets a profile above this (per miner)
+    "ramp_enabled": False,      # dynamic power-profile ramp (surplus tracking) master switch
+    "ramp_dry_run": True,       # when True, compute + display ramp decisions but don't drive the miners
+    "ramp_charge_margin": 1.25, # >1 finishes the battery charge early (banks buffer vs. forecast)
     # API failsafe
     "api_fail_action": "stop",
     "api_fail_cycles": 3,

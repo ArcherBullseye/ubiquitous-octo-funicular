@@ -124,6 +124,18 @@ class LuxOsClient:
             })
         return out
 
+    def set_profile(self, profile: str) -> None:
+        """Set the miner's active performance profile (all boards) via profileset.
+
+        `profile` is a profile-name selector as returned by get_profiles()
+        ("Profile Name", e.g. "375MHz", "default", "75TH - 2kWh"). Requires a
+        session. Used by the surplus-tracking ramp controller to dial power."""
+        sid = self._ensure_session()
+        resp = self._send("profileset", f"{sid},{profile}")
+        if not self._status_ok(resp):
+            msg = resp.get("STATUS", [{}])[0].get("Msg", "unknown")
+            raise LuxOsError(f"profileset '{profile}' failed: {msg}")
+
     def start_mining(self) -> None:
         """Wake the miner up from sleep/curtailment."""
         sid = self._ensure_session()
