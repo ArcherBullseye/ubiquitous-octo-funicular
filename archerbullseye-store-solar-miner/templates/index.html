@@ -167,10 +167,12 @@
     .miner-row .m-btns button:disabled { opacity: .35; cursor: default; }
     /* Mining Control spans two columns for the per-miner power/profile readout. */
     .mining-control-card { grid-column: span 2; }
-    /* Combined Load / Backup card: two stacked metrics. */
-    .lb-split { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; }
-    .lb-sub { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-    .lb-val { font-size: clamp(15px, 1.4vw, 20px); font-weight: 700; margin-top: 1px; }
+    /* Combined Home / Miner card: two stacked rows, label left, value right. */
+    .lb-rows { display: flex; flex-direction: column; justify-content: center;
+               gap: 12px; height: 100%; }
+    .lb-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .lb-name { font-size: 13px; font-weight: 600; white-space: nowrap; }
+    .lb-val { font-size: clamp(16px, 1.5vw, 22px); font-weight: 700; }
     /* Per-miner profile/power detail line inside a miner row. */
     .miner-row .m-power { color: var(--muted); font-size: 11px; white-space: nowrap; flex-shrink: 0; }
     /* Stepped power bar: one segment per profile rung, filled to current level. */
@@ -591,15 +593,14 @@
     </div>
 
     <div class="card">
-      <div class="card-label" style="color:#f43f5e;">🏠 Load / Backup</div>
-      <div class="lb-split">
-        <div>
-          <div class="lb-sub">Load</div>
-          <div class="lb-val" id="load-power">—</div>
+      <div class="lb-rows">
+        <div class="lb-row">
+          <span class="lb-name" style="color:#f43f5e;">🏠 Home</span>
+          <span class="lb-val" id="load-power">—</span>
         </div>
-        <div>
-          <div class="lb-sub">Backup</div>
-          <div class="lb-val" id="backup-power">—</div>
+        <div class="lb-row">
+          <span class="lb-name" style="color:#a78bfa;">⛏ Miner</span>
+          <span class="lb-val" id="backup-power">—</span>
         </div>
       </div>
     </div>
