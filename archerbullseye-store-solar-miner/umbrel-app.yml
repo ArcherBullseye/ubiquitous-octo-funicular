@@ -4,7 +4,7 @@ name: Solar Miner
 tagline: Control your Bitcoin miner with solar power
 icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner/icon.svg
 category: bitcoin
-version: "1.5.15"
+version: "1.5.16"
 port: 3000
 description: >-
   Monitor your Solis solar inverter and automatically control your LuxOS
@@ -26,6 +26,12 @@ support: https://github.com/ArcherBullseye/ubiquitous-octo-funicular/issues
 gallery:
   - https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner/icon.svg
 releaseNotes: >-
+  v1.5.16: Combined the Home and Miner readings into one card, stacked
+  vertically with values on the right, and labelled the EPS/backup reading
+  "Miner" since that circuit carries the mining load. The power-profile ramp's
+  wake + profile-set path has been validated on real hardware.
+
+
   v1.5.15: Solar power ramp — OBSERVE MODE. Introduces a dynamic controller
   that dials each miner's power profile up and down to soak surplus solar
   without exporting, while still charging the battery full by end of day. It

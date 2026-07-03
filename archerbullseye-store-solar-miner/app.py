@@ -23,7 +23,7 @@ from dehumidifier import DehumidifierClient
 
 load_dotenv()
 
-APP_VERSION = "1.5.15"
+APP_VERSION = "1.5.16"
 
 app = Flask(__name__)
 
@@ -403,7 +403,7 @@ def _apply_ramp(order: list, plan: dict) -> list:
             except LuxOsError:
                 cur_profile, awake = None, False
             if not awake:
-                client.start_mining()          # wake, then set the profile
+                client.start_mining()   # wake, then set the target profile same cycle
             if cur_profile != p["target_profile"]:
                 client.set_profile(p["target_profile"])
         except Exception as e:
