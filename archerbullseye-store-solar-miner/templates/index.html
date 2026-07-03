@@ -173,6 +173,13 @@
     .lb-val { font-size: clamp(15px, 1.4vw, 20px); font-weight: 700; margin-top: 1px; }
     /* Per-miner profile/power detail line inside a miner row. */
     .miner-row .m-power { color: var(--muted); font-size: 11px; white-space: nowrap; flex-shrink: 0; }
+    /* Stepped power bar: one segment per profile rung, filled to current level. */
+    .miner-steps { display: flex; align-items: center; gap: 7px; margin: 3px 0 2px 24px; }
+    .step-bar { display: flex; gap: 2px; flex: 1; min-width: 0; }
+    .step-bar .step { flex: 1 1 0; height: 11px; border-radius: 2px;
+                      background: rgba(255,255,255,.08); transition: background .3s ease; }
+    .step-bar .step.target { box-shadow: inset 0 0 0 2px var(--amber); }
+    .miner-steps .m-power { color: var(--muted); font-size: 11px; white-space: nowrap; flex-shrink: 0; min-width: 42px; text-align: right; }
 
     /* ── Info row (sats + btc price + weather) ── */
     /* Same 7-col grid as power-grid so cards align perfectly */
@@ -791,10 +798,25 @@
             <input type="number" id="s-miner2_power_w" step="10" min="0" placeholder="e.g. 3450" />
             <div class="form-hint">Combined draw is used to estimate whether PV output can offset mining load.</div>
           </div>
+          <div class="panel-title" style="margin-top:16px;">Solar Power Ramp</div>
+          <div class="form-hint" style="margin-bottom:10px;">Dynamically dials each miner's power profile up and down to soak surplus solar — never exporting to the grid, while still charging the battery full by end of day.</div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-ramp_enabled" />
+            <label for="s-ramp_enabled">Enable dynamic power ramp</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-ramp_dry_run" />
+            <label for="s-ramp_dry_run">Dry-run — show the ramp's decisions but don't drive the miners yet</label>
+          </div>
           <div class="form-group">
-            <label>Ramp ceiling — max power per miner (W)</label>
-            <input type="number" id="s-miner_max_watts" step="10" min="0" placeholder="e.g. 2960" />
-            <div class="form-hint">The surplus-tracking ramp never pushes a miner above the profile nearest this wattage (default 2960 W = the S19j Pro's "default" step).</div>
+            <label>Max profile per miner (ramp ceiling)</label>
+            <select id="s-miner_max_watts"></select>
+            <div class="form-hint">The ramp never pushes a miner above this profile. Populated from the miner's live profile ladder.</div>
+          </div>
+          <div class="form-group">
+            <label>Charge safety margin (×)</label>
+            <input type="number" id="s-ramp_charge_margin" step="0.05" min="1" placeholder="1.25" />
+            <div class="form-hint">Above 1 finishes the battery charge early, banking a buffer against forecast shortfalls (1.25 = finish ~20% sooner).</div>
           </div>
         </div>
 
@@ -1518,6 +1540,7 @@
       }
 
       // Miner state — per-miner rows (X1, X2) with their own hold indicators
+      _ramp = s.ramp || null;
       _renderMiners(s.miners, false);
       el('miner-threshold').textContent = 'SOC ON: ' + (s.effective_soc_on != null ? s.effective_soc_on.toFixed(1) + '%' : '—');
       el('miner-threshold').style.color = '';
@@ -1727,6 +1750,7 @@
         'sunny_hours_threshold','radiation_threshold_wm2','smart_min_pv_w',
         'location_lat','location_lon',
         'battery_capacity_kwh','pv_peak_kw','miner_power_w','miner2_power_w','miner_max_watts',
+        'ramp_charge_margin',
         'eod_soc_target', 'dehum_excess_threshold_w', 'dehum_version',
         'dehum_min_run_minutes', 'dehum_min_off_minutes', 'dehum_manual_override_hours',
         'api_fail_cycles',
@@ -1754,6 +1778,7 @@
 
       const boolKeys = [
         'smart_start_enabled', 'eod_soc_target_enabled', 'dehum_auto_enabled',
+        'ramp_enabled', 'ramp_dry_run',
         'tg_miner_onoff','tg_smart_start','tg_api_failure',
         'tg_soc_low','tg_soc_full','tg_hashrate_drop',
         'tg_daily_summary','tg_sats_milestone','tg_sunny_day_ahead','tg_weekly_recap',
@@ -1763,6 +1788,7 @@
         if (inp) inp.checked = !!s[k];
       }
       el('s-eod_soc_target').disabled = !el('s-eod_soc_target_enabled').checked;
+      _populateMaxProfile(s['miner_max_watts']);
 
       // Populate select for api_fail_action
       const sel = el('s-api_fail_action');
@@ -1816,6 +1842,9 @@
       miner_power_w:           Number(el('s-miner_power_w').value),
       miner2_power_w:          Number(el('s-miner2_power_w').value),
       miner_max_watts:         Number(el('s-miner_max_watts').value) || 2960,
+      ramp_enabled:            el('s-ramp_enabled').checked,
+      ramp_dry_run:            el('s-ramp_dry_run').checked,
+      ramp_charge_margin:      Number(el('s-ramp_charge_margin').value) || 1.25,
       api_fail_action:         el('s-api_fail_action').value,
       api_fail_cycles:         Number(el('s-api_fail_cycles').value),
       lux_pool_api_key:        el('s-lux_pool_api_key').value,
@@ -2012,6 +2041,37 @@
     loadSettings();
   }
 
+  // Fill the "max profile" dropdown from a miner's live profile ladder.
+  async function _populateMaxProfile(savedWatts) {
+    const sel = el('s-miner_max_watts');
+    if (!sel) return;
+    if (!_minerProfiles) await loadMinerProfiles();
+    let ladder = null;
+    if (_minerProfiles) {
+      for (const k of Object.keys(_minerProfiles)) {
+        const p = _minerProfiles[k];
+        if (p && p.reachable && p.ladder && p.ladder.length) { ladder = p.ladder; break; }
+      }
+    }
+    const saved = Number(savedWatts) || 2960;
+    sel.innerHTML = '';
+    if (ladder) {
+      for (const p of ladder) {
+        const o = document.createElement('option');
+        o.value = String(p.watts);
+        o.textContent = `${p.frequency} MHz · ${p.watts} W · ${p.hashrate_ths} TH/s`;
+        sel.appendChild(o);
+      }
+      let best = ladder[0].watts, bestd = Infinity;
+      for (const p of ladder) { const d = Math.abs(p.watts - saved); if (d < bestd) { bestd = d; best = p.watts; } }
+      sel.value = String(best);
+    } else {
+      const o = document.createElement('option');
+      o.value = String(saved); o.textContent = saved + ' W (miner offline — can\'t list profiles)';
+      sel.appendChild(o); sel.value = String(saved);
+    }
+  }
+
   function closeSettings() {
     el('settings-modal').classList.remove('open');
   }
@@ -2038,6 +2098,38 @@
   let _fastPoll = null;
   let _minerProfiles = null;      // latest /api/miner/profiles payload (per-miner ladder + current)
   let _lastMinersStatus = null;   // latest status, kept so profile fetches can re-render
+  let _ramp = null;               // latest ramp plan from /api/status (targets per miner)
+
+  // Green (low power) → amber → red (high power) for a filled step at index i of n.
+  function _stepColor(i, n) {
+    const hue = 140 - 140 * (n > 1 ? i / (n - 1) : 0);  // 140=green .. 0=red
+    return `hsl(${hue.toFixed(0)}, 68%, 48%)`;
+  }
+
+  // Build the stepped power bar: one segment per profile rung, filled to the
+  // current level, with the ramp's target rung outlined (when a plan exists).
+  function _stepBar(prof, rampMiner) {
+    const ladder = prof && prof.ladder;
+    if (!ladder || !ladder.length) return '';
+    const curName = prof.current_name;
+    const curIdx = ladder.findIndex(p => p.name === curName);
+    const tgtName = rampMiner && rampMiner.target_profile;
+    const tgtIdx = tgtName ? ladder.findIndex(p => p.name === tgtName) : -1;
+    const boxes = ladder.map((p, i) => {
+      let cls = 'step';
+      let style = '';
+      if (curIdx >= 0 && i <= curIdx) style = `background:${_stepColor(i, ladder.length)}`;
+      if (i === tgtIdx) cls += ' target';
+      const t = `${p.frequency} MHz · ${p.watts} W · ${p.hashrate_ths} TH/s`;
+      return `<div class="${cls}" style="${style}" title="${t}"></div>`;
+    }).join('');
+    // Right-side label: current draw, plus target when a (dry-run) plan differs.
+    const cur = (curIdx >= 0) ? (ladder[curIdx].watts / 1000).toFixed(2) + ' kW' : 'off';
+    let lbl = cur;
+    if (tgtIdx >= 0 && tgtIdx !== curIdx) lbl = cur + ' → ' + (ladder[tgtIdx].watts / 1000).toFixed(2);
+    return `<div class="miner-steps"><div class="step-bar">${boxes}</div>`
+         + `<span class="m-power">${lbl}</span></div>`;
+  }
 
   // Render the per-miner rows (X1, X2) inside the Mining Control card, each with
   // its own Start/Stop buttons. Stop pauses just that miner until midnight.
@@ -2070,24 +2162,22 @@
       } else {
         stateHtml = '<span style="color:var(--muted)">?</span>';
       }
-      // Detail: current power draw (from active profile) + live hashrate.
-      const parts = [];
-      if (!checking && m.reachable !== false && m.running === true
-          && prof && prof.current && prof.current.watts) {
-        parts.push('≈' + (prof.current.watts / 1000).toFixed(2) + ' kW');
-        if (prof.current.frequency) parts.push(prof.current.frequency + ' MHz');
-      }
+      // Live hashrate (compact) shown next to the state.
+      let hr = '';
       if (m.reachable !== false && m.hashrate_mhs) {
-        parts.push((m.hashrate_mhs / 1e6).toFixed(1) + ' TH/s');  // MHS → TH/s
+        hr = (m.hashrate_mhs / 1e6).toFixed(1) + ' TH/s';  // MHS → TH/s
       }
-      const detail = parts.join(' · ');
       const dis = checking ? 'disabled' : '';
       const btns = `<span class="m-btns">`
         + `<button class="btn-green" ${dis} onclick="minerStart('${label}')" title="Start ${label}">▶︎</button>`
         + `<button class="btn-red" ${dis} onclick="minerStop('${label}')" title="Stop ${label} until midnight">■︎</button>`
         + `</span>`;
-      return `<div class="miner-row"><span class="m-name">${label}</span>`
-           + `<span class="m-state">${stateHtml}</span><span class="m-hr">${detail}</span>${btns}</div>`;
+      const row = `<div class="miner-row"><span class="m-name">${label}</span>`
+        + `<span class="m-state">${stateHtml}</span><span class="m-hr">${hr}</span>${btns}</div>`;
+      // Stepped power bar (one box per profile rung) when the miner is reachable.
+      const rampMiner = _ramp && _ramp.per_miner && _ramp.per_miner[label];
+      const steps = (!checking && m.reachable !== false) ? _stepBar(prof, rampMiner) : '';
+      return row + steps;
     }).join('');
   }
 
