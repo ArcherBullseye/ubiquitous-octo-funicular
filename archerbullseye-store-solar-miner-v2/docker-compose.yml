@@ -1,0 +1,14 @@
+version: "3.7"
+
+services:
+
+  app_proxy:
+    environment:
+      APP_HOST: archerbullseye-store-solar-miner-v2_app_1
+      APP_PORT: 3000
+
+  app:
+    image: ghcr.io/archerbullseye/solar-miner-v2-app:latest
+    volumes:
+      - ${APP_DATA_DIR}/data:/app/data
+    restart: unless-stopped
