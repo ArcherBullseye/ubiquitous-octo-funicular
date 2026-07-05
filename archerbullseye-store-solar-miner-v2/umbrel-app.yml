@@ -4,7 +4,7 @@ name: Solar Miner v2
 tagline: Solar-surplus-driven Bitcoin mining and load control
 icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
 category: bitcoin
-version: "2.0.0"
+version: "2.0.1"
 port: 3002
 description: >-
   Monitor your Solis solar inverter and automatically control your LuxOS
@@ -34,6 +34,12 @@ support: https://github.com/ArcherBullseye/solarv2/issues
 gallery:
   - https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
 releaseNotes: >-
+  v2.0.1: Dashboard now fits on one screen — shorter energy-flow diagram,
+  pool/BTC/dehumidifier stats tucked beside Mining Control, and the Ramp
+  Activity log as a scrollable column beside the charts, with tighter
+  spacing throughout.
+
+
   v2.0.0: First release of Solar Miner v2 — a ground-up refactor of Solar
   Miner for clarity and future expansion (thermostat control is next), with
   a redesigned dashboard: live animated energy-flow diagram (solar, battery,
