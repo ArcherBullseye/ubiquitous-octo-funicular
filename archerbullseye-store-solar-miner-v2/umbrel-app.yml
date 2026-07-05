@@ -5,7 +5,7 @@ tagline: Solar-surplus-driven Bitcoin mining and load control
 icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
 category: bitcoin
 version: "2.0.0"
-port: 3001
+port: 3002
 description: >-
   Monitor your Solis solar inverter and automatically control your LuxOS
   Bitcoin miners on excess solar — never exporting to the grid, while still
