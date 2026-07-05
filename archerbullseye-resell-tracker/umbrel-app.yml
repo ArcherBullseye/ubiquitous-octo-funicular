@@ -4,7 +4,7 @@ name: Resell Tracker
 tagline: Track retail arbitrage buys, sells, and profits
 icon: https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 category: finance
-version: "1.3.13"
+version: "1.4.0"
 port: 3001
 description: >-
   Resell Tracker is a retail arbitrage management app that runs entirely on your Umbrel home server.
@@ -28,6 +28,12 @@ description: >-
 
   - Filter by In Inventory vs. Sold
 
+  - Deals tab: browse clearance products scanned from Lowe's, Home Depot, Tractor Supply, and Walmart
+
+  - Auto-scan watches: the companion Chrome extension re-scans saved clearance pages on a schedule
+
+  - Telegram alerts for big discounts and price drops, with configurable thresholds
+
   - All data stored locally in SQLite -- no cloud required
 
 
@@ -45,9 +51,13 @@ repo: https://github.com/ArcherBullseye/resell-tracker
 support: https://github.com/ArcherBullseye/resell-tracker/issues
 dependencies: []
 releaseNotes: >-
-  v1.3.13: Lowe's all-pages scan now exactly mirrors bookmarklet v1.2.15 —
-  always fetches from Nao=0 via HTTP regardless of current page, SKU-first
-  dedup, 450ms inter-page delay. Fixes page-2+ returning 0 products.
+  v1.4.0: Hands-off deal scanning. New Deals tab browses every scanned product
+  with filters, price history, and one-click add-to-tracker. Add Watches to
+  re-scan clearance pages on a schedule via the browser extension, which now
+  sends results straight to the app (no more file download/upload). Telegram
+  alerts fire automatically for big discounts and price drops, with per-product
+  dedupe and configurable thresholds. Also includes the v1.3.14 Lowe's
+  pagination fix (follows real Next links from server HTML).
 path: ""
 defaultUsername: ""
 defaultPassword: ""
