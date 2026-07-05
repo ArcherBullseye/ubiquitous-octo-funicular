@@ -179,25 +179,12 @@ main {
   50% { opacity: 1; }
 }
 
-/* Right column: battery ring + smart start */
+/* SOC ring gauge inside the flow diagram's battery node */
+.soc-svg-num { font-size: 12.5px; font-weight: 800; fill: var(--green); }
+#soc-ring { filter: drop-shadow(0 0 5px currentColor); }
+
+/* Right column: mining control + smart start */
 .side-col { display: flex; flex-direction: column; gap: clamp(8px, .9vw, 12px); }
-.batt-card { display: flex; align-items: center; gap: 14px; flex: 1; }
-.soc-ring-wrap { position: relative; width: 96px; height: 96px; flex-shrink: 0; }
-.soc-ring-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-.soc-ring-bg { fill: none; stroke: rgba(148, 163, 184, .12); stroke-width: 9; }
-.soc-ring-fg {
-  fill: none; stroke: var(--green); stroke-width: 9; stroke-linecap: round;
-  transition: stroke-dashoffset .8s ease, stroke .5s ease;
-  filter: drop-shadow(0 0 6px currentColor);
-}
-.soc-ring-center {
-  position: absolute; inset: 0; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 1px;
-}
-.soc-ring-center .soc-num { font-size: 20px; font-weight: 800; line-height: 1; }
-.soc-ring-center .soc-cap { font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
-.batt-meta { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.batt-meta .bm-power { font-size: 17px; font-weight: 800; }
 
 .smart-card .sc-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .smart-card .sc-stats { margin-top: 7px; display: flex; flex-direction: column; gap: 2px; }
@@ -208,13 +195,16 @@ main {
 #smart-hold-btn.held { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #1a1203; border-color: transparent; }
 #eod-projection { margin-top: 8px; font-size: 11.5px; display: none; }
 
-/* ── Mining control + stats (mid row) ───────────────────────── */
+/* ── Forecast + ramp + stats (mid row) ──────────────────────── */
 .mid-row {
   display: grid;
   grid-template-columns: minmax(0, 2.2fr) minmax(250px, 1fr);
   gap: clamp(8px, .9vw, 12px);
   align-items: stretch;
 }
+.left-col { display: flex; flex-direction: column; gap: clamp(8px, .9vw, 12px); min-width: 0; }
+.left-col > .card { flex-shrink: 0; }
+.left-col > #ramp-log-card { flex: 1; min-height: 0; }
 .stats-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -224,7 +214,7 @@ main {
 }
 .stat-card { padding: 8px 11px; }
 .stat-card .card-label { margin-bottom: .3em; font-size: 9.5px; }
-.mining-card { border-top: 2px solid rgba(167, 139, 250, .4); }
+.mining-card { border-top: 2px solid rgba(167, 139, 250, .4); flex: 1; }
 .mining-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
 .ramp-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .chip {
@@ -241,16 +231,16 @@ main {
 }
 .miner-row + .miner-row { border-top: 1px solid var(--border-soft); margin-top: 4px; }
 .miner-row .m-name {
-  font-weight: 800; font-size: 15px; width: 34px; flex-shrink: 0;
+  font-weight: 800; font-size: 13.5px; width: 26px; flex-shrink: 0;
   color: var(--violet);
 }
-.miner-row .m-state { font-weight: 700; min-width: 74px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.miner-row .m-hr { color: var(--muted); font-size: 12px; white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-.miner-row .m-btns { display: flex; gap: 6px; flex-shrink: 0; margin-left: auto; }
-.miner-row .m-btns button { padding: 3px 11px; font-size: 12px; font-weight: 700; border-radius: 7px; line-height: 1.4; }
+.miner-row .m-state { font-weight: 700; min-width: 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.miner-row .m-hr { color: var(--muted); font-size: 11px; white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.miner-row .m-btns { display: flex; gap: 5px; flex-shrink: 0; margin-left: auto; }
+.miner-row .m-btns button { padding: 2px 9px; font-size: 11px; font-weight: 700; border-radius: 6px; line-height: 1.4; }
 .miner-row .m-btns button:disabled { opacity: .35; cursor: default; }
 
-.miner-steps { display: flex; align-items: center; gap: 9px; margin: 3px 0 4px 44px; }
+.miner-steps { display: flex; align-items: center; gap: 8px; margin: 3px 0 4px 0; }
 .step-bar { display: flex; gap: 2.5px; flex: 1; min-width: 0; }
 .step-bar .step {
   flex: 1 1 0; height: 10px; border-radius: 3px;
@@ -304,7 +294,7 @@ main {
   gap: clamp(8px, .9vw, 12px);
   align-items: stretch;
 }
-.chart-main { flex: 2.1 1 0; }
+.chart-main { flex: 2.6 1 0; }
 .chart-side { flex: 1 1 0; }
 .chart-card { display: flex; flex-direction: column; min-height: 0; }
 .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: .5em; flex-shrink: 0; }
@@ -317,21 +307,21 @@ main {
 }
 .time-btn:hover { border-color: var(--muted); color: var(--text); }
 .time-btn.active { background: linear-gradient(135deg, #fbbf24, #f59e0b); border-color: transparent; color: #1a1203; font-weight: 700; }
-.chart-wrap { position: relative; flex: 1; min-height: 165px; max-height: 190px; }
+.chart-wrap { position: relative; flex: 1; min-height: 185px; max-height: 225px; }
 
-/* ── Ramp activity (column beside charts) ───────────────────── */
+/* ── Ramp activity (below the forecast) ─────────────────────── */
 #ramp-log-card { display: none; border-top: 2px solid rgba(251, 191, 36, .35); }
-.ramp-log { margin-top: 2px; max-height: 196px; overflow-y: auto; }
+.ramp-log { margin-top: 2px; max-height: 96px; overflow-y: auto; }
 .ramp-log::-webkit-scrollbar { width: 4px; }
 .ramp-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 .ramp-ev {
-  display: grid; grid-template-columns: 52px 1fr; gap: 2px 8px; align-items: baseline;
-  padding: 5px 2px; border-bottom: 1px solid var(--border-soft); font-size: 11.5px;
+  display: grid; grid-template-columns: 54px 1fr auto; gap: 10px; align-items: baseline;
+  padding: 4px 2px; border-bottom: 1px solid var(--border-soft); font-size: 11.5px;
 }
 .ramp-ev:last-child { border-bottom: none; }
 .ramp-ev .rl-time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 10px; }
-.ramp-ev .rl-what { font-weight: 600; }
-.ramp-ev .rl-why { grid-column: 2; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.ramp-ev .rl-what { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ramp-ev .rl-why { color: var(--muted); font-size: 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ramp-ev .rl-dry { color: var(--amber); font-size: 9px; font-weight: 800; letter-spacing: .05em; }
 
 /* ── Error banner ───────────────────────────────────────────── */
