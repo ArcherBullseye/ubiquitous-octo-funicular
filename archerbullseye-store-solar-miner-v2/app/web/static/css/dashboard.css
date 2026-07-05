@@ -121,8 +121,17 @@ main {
   backdrop-filter: blur(6px);
   min-width: 0;
 }
+
+/* Per-card top accent colors */
+.acc-amber  { border-top: 2px solid rgba(251, 191, 36, .45); }
+.acc-green  { border-top: 2px solid rgba(52, 211, 153, .45); }
+.acc-blue   { border-top: 2px solid rgba(96, 165, 250, .45); }
+.acc-rose   { border-top: 2px solid rgba(251, 113, 133, .45); }
+.acc-violet { border-top: 2px solid rgba(167, 139, 250, .45); }
+.acc-teal   { border-top: 2px solid rgba(45, 212, 191, .45); }
+.acc-orange { border-top: 2px solid rgba(251, 146, 60, .5); }
 .card-label {
-  font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
+  font-size: 13px; text-transform: uppercase; letter-spacing: .09em;
   color: var(--muted); font-weight: 700;
   display: flex; align-items: center; gap: 6px; margin-bottom: .45em;
 }
@@ -153,10 +162,10 @@ main {
   fill: rgba(17, 22, 36, .92);
   stroke-width: 1.4;
 }
-.flow-icon { font-size: 17px; }
-.flow-val  { font-size: 15px; font-weight: 800; fill: var(--text); font-variant-numeric: tabular-nums; }
-.flow-cap  { font-size: 9.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; fill: var(--muted); }
-.flow-sub  { font-size: 9.5px; fill: var(--muted); }
+.flow-icon { font-size: 21px; }
+.flow-val  { font-size: 19px; font-weight: 800; fill: var(--text); font-variant-numeric: tabular-nums; }
+.flow-cap  { font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; fill: var(--muted); }
+.flow-sub  { font-size: 12px; fill: var(--muted); }
 
 .flow-path {
   fill: none; stroke-width: 2;
@@ -180,7 +189,7 @@ main {
 }
 
 /* SOC ring gauge inside the flow diagram's battery node */
-.soc-svg-num { font-size: 12.5px; font-weight: 800; fill: var(--green); }
+.soc-svg-num { font-size: 15px; font-weight: 800; fill: var(--green); }
 #soc-ring { filter: drop-shadow(0 0 5px currentColor); }
 
 /* Right column: mining control + smart start */
@@ -202,18 +211,26 @@ main {
   gap: clamp(8px, .9vw, 12px);
   align-items: stretch;
 }
-.left-col { display: flex; flex-direction: column; gap: clamp(8px, .9vw, 12px); min-width: 0; }
-.left-col > .card { flex-shrink: 0; }
-.left-col > #ramp-log-card { flex: 1; min-height: 0; }
+.left-col { display: flex; flex-direction: row; gap: clamp(8px, .9vw, 12px); min-width: 0; }
+.left-col > .card { flex: 1 1 0; min-width: 0; }
 .stats-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-columns: 1.25fr 1fr;
   gap: clamp(8px, .9vw, 12px);
   min-width: 0;
 }
 .stat-card { padding: 8px 11px; }
-.stat-card .card-label { margin-bottom: .3em; font-size: 9.5px; }
+.stat-card .card-label { margin-bottom: .3em; font-size: 12px; }
+/* Combined earnings card rows */
+.es-row {
+  display: grid; grid-template-columns: 52px 1fr auto;
+  gap: 8px; align-items: baseline;
+  font-size: 12.5px; padding: 2.5px 0;
+}
+.es-row > span:first-child { color: var(--muted); font-size: 11px; }
+.es-row b { font-weight: 800; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.es-usd { color: var(--green); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.es-cap { color: var(--muted); font-size: 10px; white-space: nowrap; }
 .mining-card { border-top: 2px solid rgba(167, 139, 250, .4); flex: 1; }
 .mining-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
 .ramp-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
@@ -288,17 +305,16 @@ main {
 .hour-card .temp { font-size: 10.5px; font-weight: 700; }
 .hour-card .rad { font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-/* ── Charts + ramp activity row ─────────────────────────────── */
+/* ── Charts row (same column split as hero/mid so seams align) ── */
 .charts-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(250px, 1fr);
   gap: clamp(8px, .9vw, 12px);
   align-items: stretch;
 }
-.chart-main { flex: 2.6 1 0; }
-.chart-side { flex: 1 1 0; }
 .chart-card { display: flex; flex-direction: column; min-height: 0; }
 .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: .5em; flex-shrink: 0; }
-.chart-header h3 { font-size: 10.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .09em; }
+.chart-header h3 { font-size: 13px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .09em; }
 .time-btns { display: flex; gap: 3px; }
 .time-btn {
   background: none; border: 1px solid var(--border-soft); color: var(--muted);
@@ -422,7 +438,8 @@ main {
   .hero-row, .mid-row { grid-template-columns: 1fr; }
   .side-col { flex-direction: row; }
   .side-col > .card { flex: 1; }
-  .charts-row { flex-direction: column; }
+  .charts-row { grid-template-columns: 1fr; }
+  .left-col { flex-direction: column; }
   .flow-card svg { max-height: none; }
 }
 @media (max-width: 640px) {
