@@ -421,9 +421,8 @@ async function refresh() {
       }
       const curHour = new Date().getHours();
       const curEst = wx.current_radiation_w != null ? estSolar(wx.current_radiation_w, curHour) : '—';
-      const curRadLabel = wx.current_radiation_w != null
-        ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${Math.round(wx.current_radiation_w)} W/m²</div>` : '';
-      el('wx-radiation').innerHTML = curEst + curRadLabel;
+      const curRadLabel = wx.current_radiation_w != null ? `${Math.round(wx.current_radiation_w)} W/m²` : '';
+      el('wx-radiation').innerHTML = curEst + (curRadLabel ? ` <span class="wx-rad-sub">· ${curRadLabel}</span>` : '');
 
       const row = el('hourly-row');
       if (wx.hourly && wx.hourly.length) {
@@ -449,15 +448,20 @@ async function refresh() {
     const btcPrice = s.btc_price_usd || 0;
     el('btc-price').textContent = btcPrice
       ? '$' + btcPrice.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—';
-    el('btc-price-sub').textContent = btcPrice ? 'per BTC' : 'mempool.space';
 
     function satsToUsd(sats) {
       if (!sats || !btcPrice) return btcPrice ? '$0.00' : '—';
       const usd = (sats / 1e8) * btcPrice;
       return usd < 0.01 ? '<$0.01' : '$' + usd.toFixed(2);
     }
+    // Abbreviate large sat counts so the value never truncates in the
+    // narrow Earnings card column (e.g. "91.3K sats" instead of "91,340 sats").
+    function fmtSats(sats) {
+      if (sats >= 10000) return (sats / 1000).toFixed(1) + 'K sats';
+      return sats.toLocaleString() + ' sats';
+    }
     const todaySats = s.today_sats || 0;
-    el('pool-sats-today').textContent = todaySats.toLocaleString() + ' sats';
+    el('pool-sats-today').textContent = fmtSats(todaySats);
     el('pool-today-usd').textContent = satsToUsd(todaySats);
 
     const pool = s.pool;
@@ -467,15 +471,13 @@ async function refresh() {
       const hr24h = pool.hashrate_24h_ths || 0;
       const hrDisplay = hr5m > 0 ? hr5m : hr24h;
       const hrLabel = hr5m > 0 ? 'TH/s live' : (hr24h > 0 ? 'TH/s 24h avg' : '');
-      el('pool-sats-unpaid').textContent = unpaid.toLocaleString() + ' sats';
+      el('pool-sats-unpaid').textContent = fmtSats(unpaid);
       el('pool-unpaid-usd').textContent = satsToUsd(unpaid);
       el('pool-hashrate').textContent = hrDisplay > 0 ? hrDisplay.toFixed(2) + ' ' + hrLabel : '';
-      el('pool-shares').textContent = pool.uptime_pct != null ? pool.uptime_pct.toFixed(0) + '% uptime 24h' : '';
     } else {
       el('pool-sats-unpaid').textContent = '—';
       el('pool-unpaid-usd').textContent = '';
       el('pool-hashrate').textContent = '';
-      el('pool-shares').textContent = '';
     }
   } catch (e) { console.warn('refresh error:', e); }
 }
