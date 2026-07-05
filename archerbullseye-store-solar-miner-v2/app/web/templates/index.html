@@ -32,69 +32,69 @@
   <div class="hero-row">
 
     <div class="card flow-card">
-      <svg viewBox="0 0 720 332" preserveAspectRatio="xMidYMid meet" aria-label="Live energy flow">
+      <svg viewBox="0 0 720 244" preserveAspectRatio="xMidYMid meet" aria-label="Live energy flow">
         <!-- static tracks -->
-        <path id="tr-solar" class="flow-path" d="M 360 84 C 360 118, 360 128, 360 148"/>
-        <path id="tr-batt"  class="flow-path" d="M 148 166 C 220 166, 260 166, 322 166"/>
-        <path id="tr-grid"  class="flow-path" d="M 360 250 C 360 232, 360 216, 360 190"/>
-        <path id="tr-home"  class="flow-path" d="M 398 152 C 460 128, 510 112, 574 100"/>
-        <path id="tr-miner" class="flow-path" d="M 398 180 C 460 202, 510 218, 574 230"/>
+        <path id="tr-solar" class="flow-path" d="M 360 64 L 360 102"/>
+        <path id="tr-batt"  class="flow-path" d="M 122 122 L 337 122"/>
+        <path id="tr-grid"  class="flow-path" d="M 360 180 L 360 142"/>
+        <path id="tr-home"  class="flow-path" d="M 381 111 C 460 92, 520 78, 584 64"/>
+        <path id="tr-miner" class="flow-path" d="M 381 133 C 460 152, 520 166, 584 180"/>
         <!-- animated overlays (direction: toward hub by default, .rev = away) -->
-        <path id="fl-solar" class="flow-anim" style="color:#fbbf24;stroke:#fbbf24;" d="M 360 84 C 360 118, 360 128, 360 148"/>
-        <path id="fl-batt"  class="flow-anim" style="color:#34d399;stroke:#34d399;" d="M 148 166 C 220 166, 260 166, 322 166"/>
-        <path id="fl-grid"  class="flow-anim" style="color:#60a5fa;stroke:#60a5fa;" d="M 360 250 C 360 232, 360 216, 360 190"/>
-        <path id="fl-home"  class="flow-anim" style="color:#fb7185;stroke:#fb7185;" d="M 398 152 C 460 128, 510 112, 574 100"/>
-        <path id="fl-miner" class="flow-anim" style="color:#a78bfa;stroke:#a78bfa;" d="M 398 180 C 460 202, 510 218, 574 230"/>
+        <path id="fl-solar" class="flow-anim" style="color:#fbbf24;stroke:#fbbf24;" d="M 360 64 L 360 102"/>
+        <path id="fl-batt"  class="flow-anim" style="color:#34d399;stroke:#34d399;" d="M 122 122 L 337 122"/>
+        <path id="fl-grid"  class="flow-anim" style="color:#60a5fa;stroke:#60a5fa;" d="M 360 180 L 360 142"/>
+        <path id="fl-home"  class="flow-anim" style="color:#fb7185;stroke:#fb7185;" d="M 381 111 C 460 92, 520 78, 584 64"/>
+        <path id="fl-miner" class="flow-anim" style="color:#a78bfa;stroke:#a78bfa;" d="M 381 133 C 460 152, 520 166, 584 180"/>
 
         <!-- hub (inverter) -->
         <g>
-          <circle class="hub-ring" cx="360" cy="168" r="27" fill="none" stroke="rgba(251,191,36,.35)" stroke-width="1.5"/>
-          <circle cx="360" cy="168" r="20" fill="rgba(17,22,36,.95)" stroke="rgba(251,191,36,.55)" stroke-width="1.5"/>
-          <text x="360" y="174.5" text-anchor="middle" font-size="16">⚡</text>
+          <circle class="hub-ring" cx="360" cy="122" r="23" fill="none" stroke="rgba(251,191,36,.35)" stroke-width="1.5"/>
+          <circle cx="360" cy="122" r="17" fill="rgba(17,22,36,.95)" stroke="rgba(251,191,36,.55)" stroke-width="1.5"/>
+          <text x="360" y="127.5" text-anchor="middle" font-size="13">⚡</text>
         </g>
 
         <!-- Solar node (top) -->
         <g>
-          <circle class="flow-node-bg" cx="360" cy="52" r="30" stroke="rgba(251,191,36,.5)"/>
-          <text class="flow-icon" x="360" y="60" text-anchor="middle">☀️</text>
-          <text class="flow-cap" x="404" y="38" text-anchor="start">Solar</text>
-          <text class="flow-val num" id="fv-solar" x="404" y="57" text-anchor="start">—</text>
-          <text class="flow-sub" id="fs-solar" x="404" y="72" text-anchor="start"></text>
+          <circle class="flow-node-bg" cx="360" cy="38" r="25" stroke="rgba(251,191,36,.5)"/>
+          <text class="flow-icon" x="360" y="45" text-anchor="middle">☀️</text>
+          <text class="flow-cap" x="396" y="26" text-anchor="start">Solar</text>
+          <text class="flow-val num" id="fv-solar" x="396" y="43" text-anchor="start">—</text>
+          <text class="flow-sub" id="fs-solar" x="396" y="57" text-anchor="start"></text>
         </g>
 
         <!-- Battery node (left) -->
         <g>
-          <circle class="flow-node-bg" cx="116" cy="166" r="30" stroke="rgba(52,211,153,.5)"/>
-          <text class="flow-icon" x="116" y="174" text-anchor="middle">🔋</text>
-          <text class="flow-cap" x="116" y="120" text-anchor="middle">Battery</text>
-          <text class="flow-val num" id="fv-batt" x="116" y="224" text-anchor="middle">—</text>
-          <text class="flow-sub" id="fs-batt" x="116" y="240" text-anchor="middle"></text>
+          <circle class="flow-node-bg" cx="96" cy="122" r="25" stroke="rgba(52,211,153,.5)"/>
+          <text class="flow-icon" x="96" y="129" text-anchor="middle">🔋</text>
+          <text class="flow-cap" x="96" y="84" text-anchor="middle">Battery</text>
+          <text class="flow-val num" id="fv-batt" x="96" y="170" text-anchor="middle">—</text>
+          <text class="flow-sub" id="fs-batt" x="96" y="184" text-anchor="middle"></text>
         </g>
 
         <!-- Grid node (bottom) -->
         <g>
-          <circle class="flow-node-bg" cx="360" cy="282" r="30" stroke="rgba(96,165,250,.5)"/>
-          <text class="flow-icon" x="360" y="290" text-anchor="middle">🗼</text>
-          <text class="flow-cap" x="404" y="272" text-anchor="start">Grid</text>
-          <text class="flow-val num" id="fv-grid" x="404" y="291" text-anchor="start">—</text>
-          <text class="flow-sub" id="fs-grid" x="404" y="306" text-anchor="start"></text>
+          <circle class="flow-node-bg" cx="360" cy="206" r="25" stroke="rgba(96,165,250,.5)"/>
+          <text class="flow-icon" x="360" y="213" text-anchor="middle">🗼</text>
+          <text class="flow-cap" x="396" y="198" text-anchor="start">Grid</text>
+          <text class="flow-val num" id="fv-grid" x="396" y="215" text-anchor="start">—</text>
+          <text class="flow-sub" id="fs-grid" x="396" y="229" text-anchor="start"></text>
         </g>
 
         <!-- Home node (right upper) -->
         <g>
-          <circle class="flow-node-bg" cx="606" cy="94" r="30" stroke="rgba(251,113,133,.5)"/>
-          <text class="flow-icon" x="606" y="102" text-anchor="middle">🏠</text>
-          <text class="flow-cap" x="648" y="80" text-anchor="start">Home</text>
-          <text class="flow-val num" id="fv-home" x="648" y="99" text-anchor="start">—</text>
+          <circle class="flow-node-bg" cx="610" cy="56" r="25" stroke="rgba(251,113,133,.5)"/>
+          <text class="flow-icon" x="610" y="63" text-anchor="middle">🏠</text>
+          <text class="flow-cap" x="646" y="46" text-anchor="start">Home</text>
+          <text class="flow-val num" id="fv-home" x="646" y="63" text-anchor="start">—</text>
         </g>
 
         <!-- Miner node (right lower) -->
         <g>
-          <circle class="flow-node-bg" cx="606" cy="238" r="30" stroke="rgba(167,139,250,.5)"/>
-          <text class="flow-icon" x="606" y="246" text-anchor="middle">⛏️</text>
-          <text class="flow-cap" x="648" y="224" text-anchor="start">Miners</text>
-          <text class="flow-val num" id="fv-miner" x="648" y="243" text-anchor="start">—</text>
-          <text class="flow-sub" id="fs-miner" x="648" y="258" text-anchor="start"></text>
+          <circle class="flow-node-bg" cx="610" cy="188" r="25" stroke="rgba(167,139,250,.5)"/>
+          <text class="flow-icon" x="610" y="195" text-anchor="middle">⛏️</text>
+          <text class="flow-cap" x="646" y="176" text-anchor="start">Miners</text>
+          <text class="flow-val num" id="fv-miner" x="646" y="193" text-anchor="start">—</text>
+          <text class="flow-sub" id="fs-miner" x="646" y="207" text-anchor="start"></text>
         </g>
       </svg>
     </div>
@@ -139,50 +139,51 @@
     </div>
   </div>
 
-  <!-- ── Mining control ── -->
-  <div class="card mining-card">
-    <div class="mining-head">
-      <div class="card-label" style="margin:0;">🎛 Mining Control</div>
-      <div class="ramp-chips" id="ramp-chips"></div>
+  <!-- ── Mining control + stats ── -->
+  <div class="mid-row">
+    <div class="card mining-card">
+      <div class="mining-head">
+        <div class="card-label" style="margin:0;">🎛 Mining Control</div>
+        <div class="ramp-chips" id="ramp-chips"></div>
+      </div>
+      <div id="miners-list"></div>
+      <div class="mining-foot" id="miner-threshold">SOC ON: —</div>
     </div>
-    <div id="miners-list"></div>
-    <div class="mining-foot" id="miner-threshold">SOC ON: —</div>
-  </div>
 
-  <!-- ── Stats row ── -->
-  <div class="stats-row">
-    <div class="card">
-      <div class="card-label">⛏ Sats Today</div>
-      <div class="card-value num" id="pool-sats-today" style="font-size:21px;">—</div>
-      <div class="stat-usd num" id="pool-today-usd">—</div>
-      <div class="card-sub num" id="pool-hashrate"></div>
-    </div>
-    <div class="card">
-      <div class="card-label">💰 Unpaid</div>
-      <div class="card-value num" id="pool-sats-unpaid" style="font-size:21px;">—</div>
-      <div class="stat-usd num" id="pool-unpaid-usd">—</div>
-      <div class="card-sub num" id="pool-shares"></div>
-    </div>
-    <div class="card">
-      <div class="card-label">₿ BTC Price</div>
-      <div class="card-value num" id="btc-price" style="font-size:21px;">—</div>
-      <div class="card-sub" id="btc-price-sub">mempool.space</div>
-    </div>
-    <div class="card">
-      <div class="card-label">💧 Dehumidifier</div>
-      <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;">
-        <span class="badge badge-gray" id="dehum-badge">—</span>
-        <span class="badge badge-green" id="dehum-auto-badge" style="display:none;">Auto</span>
-        <span class="card-value num" id="dehum-humidity" style="font-size:19px;margin-left:auto;">—</span>
+    <div class="stats-grid">
+      <div class="card stat-card">
+        <div class="card-label">⛏ Sats Today</div>
+        <div class="card-value num" id="pool-sats-today" style="font-size:16px;">—</div>
+        <div class="stat-usd num" id="pool-today-usd">—</div>
+        <div class="card-sub num" id="pool-hashrate"></div>
       </div>
-      <div class="card-sub" id="dehum-tank" style="display:none;color:var(--red);margin-top:4px;">⚠ Tank Full</div>
-      <div class="card-sub" id="dehum-error" style="display:none;font-size:10px;margin-top:4px;"></div>
-      <div class="dehum-btns">
-        <button class="btn-amber" id="dehum-on-btn" onclick="dehum(true)">ON</button>
-        <button class="btn-dim" id="dehum-off-btn" onclick="dehum(false)">OFF</button>
+      <div class="card stat-card">
+        <div class="card-label">💰 Unpaid</div>
+        <div class="card-value num" id="pool-sats-unpaid" style="font-size:16px;">—</div>
+        <div class="stat-usd num" id="pool-unpaid-usd">—</div>
+        <div class="card-sub num" id="pool-shares"></div>
       </div>
-      <div class="dehum-pips">
-        <div id="dehum-pip-0"></div><div id="dehum-pip-1"></div><div id="dehum-pip-2"></div>
+      <div class="card stat-card">
+        <div class="card-label">₿ BTC Price</div>
+        <div class="card-value num" id="btc-price" style="font-size:16px;">—</div>
+        <div class="card-sub" id="btc-price-sub">mempool.space</div>
+      </div>
+      <div class="card stat-card">
+        <div class="card-label">💧 Dehumidifier</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;">
+          <span class="badge badge-gray" id="dehum-badge">—</span>
+          <span class="badge badge-green" id="dehum-auto-badge" style="display:none;">Auto</span>
+          <span class="card-value num" id="dehum-humidity" style="font-size:15px;margin-left:auto;">—</span>
+        </div>
+        <div class="card-sub" id="dehum-tank" style="display:none;color:var(--red);margin-top:2px;">⚠ Tank Full</div>
+        <div class="card-sub" id="dehum-error" style="display:none;font-size:10px;margin-top:2px;"></div>
+        <div class="dehum-btns">
+          <button class="btn-amber" id="dehum-on-btn" onclick="dehum(true)">ON</button>
+          <button class="btn-dim" id="dehum-off-btn" onclick="dehum(false)">OFF</button>
+        </div>
+        <div class="dehum-pips">
+          <div id="dehum-pip-0"></div><div id="dehum-pip-1"></div><div id="dehum-pip-2"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -202,9 +203,9 @@
     </div>
   </div>
 
-  <!-- ── Charts ── -->
+  <!-- ── Charts + ramp activity ── -->
   <div class="charts-row">
-    <div class="card chart-card">
+    <div class="card chart-card chart-main">
       <div class="chart-header">
         <h3 id="soc-chart-title">SOC &amp; Power (12h)</h3>
         <div class="time-btns">
@@ -216,19 +217,17 @@
       </div>
       <div class="chart-wrap"><canvas id="socChart"></canvas></div>
     </div>
-    <div class="card chart-card">
+    <div class="card chart-card chart-side">
       <div class="chart-header"><h3>Daily Earnings (8d)</h3></div>
       <div class="chart-wrap"><canvas id="dailySatsChart"></canvas></div>
     </div>
-  </div>
-
-  <!-- ── Ramp activity ── -->
-  <div class="card" id="ramp-log-card">
-    <div class="chart-header">
-      <h3>⚡ Ramp Activity</h3>
-      <span id="ramp-log-mode" class="badge badge-gray" style="font-size:10px;">—</span>
+    <div class="card chart-side" id="ramp-log-card">
+      <div class="chart-header">
+        <h3>⚡ Ramp Activity</h3>
+        <span id="ramp-log-mode" class="badge badge-gray" style="font-size:10px;">—</span>
+      </div>
+      <div id="ramp-log" class="ramp-log"></div>
     </div>
-    <div id="ramp-log" class="ramp-log"></div>
   </div>
 </main>
 
