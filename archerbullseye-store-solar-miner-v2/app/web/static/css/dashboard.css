@@ -156,14 +156,14 @@ main {
   align-items: stretch;
 }
 .flow-card { position: relative; display: flex; flex-direction: column; }
-.flow-card svg { width: 100%; height: auto; max-height: 310px; display: block; flex: 1; margin: 0 auto; }
+.flow-card svg { width: 100%; height: auto; max-height: 225px; display: block; flex: 1; margin: 0 auto; }
 
 .flow-node-bg {
   fill: rgba(17, 22, 36, .92);
   stroke-width: 1.4;
 }
-.flow-icon { font-size: 26px; }
-.grid-pylon path { fill: none; stroke: #60a5fa; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.flow-icon { font-size: 31px; }
+.grid-pylon path { fill: none; stroke: #60a5fa; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .grid-pylon circle { fill: #60a5fa; }
 .flow-val  { font-size: 24px; font-weight: 800; fill: var(--text); font-variant-numeric: tabular-nums; }
 .flow-cap  { font-size: 14px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; fill: var(--muted); }
@@ -246,9 +246,9 @@ main {
 
 .miner-row {
   display: flex; align-items: center; gap: 10px;
-  padding: 6px 4px 2px;
+  padding: 4px 4px 1px;
 }
-.miner-row + .miner-row { border-top: 1px solid var(--border-soft); margin-top: 4px; }
+.miner-row + .miner-row { border-top: 1px solid var(--border-soft); margin-top: 2px; }
 .miner-row .m-name {
   font-weight: 800; font-size: 13.5px; width: 26px; flex-shrink: 0;
   color: var(--violet);
@@ -259,7 +259,7 @@ main {
 .miner-row .m-btns button { padding: 2px 9px; font-size: 11px; font-weight: 700; border-radius: 6px; line-height: 1.4; }
 .miner-row .m-btns button:disabled { opacity: .35; cursor: default; }
 
-.miner-steps { display: flex; align-items: center; gap: 8px; margin: 3px 0 4px 0; }
+.miner-steps { display: flex; align-items: center; gap: 8px; margin: 2px 0 2px 0; }
 .step-bar { display: flex; gap: 2.5px; flex: 1; min-width: 0; }
 .step-bar .step {
   flex: 1 1 0; height: 10px; border-radius: 3px;
