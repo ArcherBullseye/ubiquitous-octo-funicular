@@ -1,0 +1,48 @@
+manifestVersion: 1
+id: archerbullseye-store-solar-miner-v2
+name: Solar Miner v2
+tagline: Solar-surplus-driven Bitcoin mining and load control
+icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
+category: bitcoin
+version: "2.0.0"
+port: 3001
+description: >-
+  Monitor your Solis solar inverter and automatically control your LuxOS
+  Bitcoin miners on excess solar — never exporting to the grid, while still
+  charging the battery full by end of day.
+
+
+  Ground-up redesign of Solar Miner with a live animated energy-flow
+  dashboard, battery SOC ring, per-miner power-step bars, and a ramp
+  activity timeline. Same proven control engine: Smart Start with learned
+  per-hour PV efficiency, dynamic power-profile ramp (dry-run first),
+  end-of-day battery target, per-miner holds, weather forecasting, Telegram
+  alerts and commands, Luxor pool stats, live BTC price, and a Tuya
+  dehumidifier that runs on surplus. Architecture prepared for upcoming
+  thermostat control.
+
+
+  Fully configurable via the built-in web UI — no config files needed. The
+  database is v1-compatible: copy your existing data directory over and all
+  history and settings carry across.
+developer: ArcherBullseye
+website: https://github.com/ArcherBullseye/solarv2
+submitter: ArcherBullseye
+submission: https://github.com/ArcherBullseye/ubiquitous-octo-funicular
+repo: https://github.com/ArcherBullseye/solarv2
+support: https://github.com/ArcherBullseye/solarv2/issues
+gallery:
+  - https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
+releaseNotes: >-
+  v2.0.0: First release of Solar Miner v2 — a ground-up refactor of Solar
+  Miner for clarity and future expansion (thermostat control is next), with
+  a redesigned dashboard: live animated energy-flow diagram (solar, battery,
+  grid, home, miners), battery SOC ring, per-miner power-step bars with ramp
+  targets, and a ramp activity timeline. The control engine carries over
+  unchanged from v1.5.17, including the curtail-aware miner state fix. The
+  database is fully v1-compatible — copy your existing data directory over
+  and every reading, setting, and learned efficiency curve carries across.
+dependencies: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""

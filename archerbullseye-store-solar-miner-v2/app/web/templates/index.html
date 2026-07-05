@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>⚡ Solar Miner</title>
+  <link rel="icon" type="image/svg+xml" href="/static/img/icon.svg" />
+  <link rel="stylesheet" href="/static/css/dashboard.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-logo">☀️</div>
+    <h1>Solar Miner</h1>
+    <span class="v2" id="app-version">v2</span>
+  </div>
+  <div class="header-right">
+    <div class="status-info">
+      <div class="status-dot" id="status-dot" title="Refresh now" onclick="manualRefresh()"></div>
+      <span id="last-updated">Loading…</span>
+    </div>
+    <button class="btn-settings" onclick="openSettings()">⚙ Settings</button>
+  </div>
+</header>
+
+<main>
+  <div class="error-banner" id="error-banner"></div>
+
+  <!-- ── Hero: energy flow + battery/smart ── -->
+  <div class="hero-row">
+
+    <div class="card flow-card">
+      <svg viewBox="0 0 720 332" preserveAspectRatio="xMidYMid meet" aria-label="Live energy flow">
+        <!-- static tracks -->
+        <path id="tr-solar" class="flow-path" d="M 360 84 C 360 118, 360 128, 360 148"/>
+        <path id="tr-batt"  class="flow-path" d="M 148 166 C 220 166, 260 166, 322 166"/>
+        <path id="tr-grid"  class="flow-path" d="M 360 250 C 360 232, 360 216, 360 190"/>
+        <path id="tr-home"  class="flow-path" d="M 398 152 C 460 128, 510 112, 574 100"/>
+        <path id="tr-miner" class="flow-path" d="M 398 180 C 460 202, 510 218, 574 230"/>
+        <!-- animated overlays (direction: toward hub by default, .rev = away) -->
+        <path id="fl-solar" class="flow-anim" style="color:#fbbf24;stroke:#fbbf24;" d="M 360 84 C 360 118, 360 128, 360 148"/>
+        <path id="fl-batt"  class="flow-anim" style="color:#34d399;stroke:#34d399;" d="M 148 166 C 220 166, 260 166, 322 166"/>
+        <path id="fl-grid"  class="flow-anim" style="color:#60a5fa;stroke:#60a5fa;" d="M 360 250 C 360 232, 360 216, 360 190"/>
+        <path id="fl-home"  class="flow-anim" style="color:#fb7185;stroke:#fb7185;" d="M 398 152 C 460 128, 510 112, 574 100"/>
+        <path id="fl-miner" class="flow-anim" style="color:#a78bfa;stroke:#a78bfa;" d="M 398 180 C 460 202, 510 218, 574 230"/>
+
+        <!-- hub (inverter) -->
+        <g>
+          <circle class="hub-ring" cx="360" cy="168" r="27" fill="none" stroke="rgba(251,191,36,.35)" stroke-width="1.5"/>
+          <circle cx="360" cy="168" r="20" fill="rgba(17,22,36,.95)" stroke="rgba(251,191,36,.55)" stroke-width="1.5"/>
+          <text x="360" y="174.5" text-anchor="middle" font-size="16">⚡</text>
+        </g>
+
+        <!-- Solar node (top) -->
+        <g>
+          <circle class="flow-node-bg" cx="360" cy="52" r="30" stroke="rgba(251,191,36,.5)"/>
+          <text class="flow-icon" x="360" y="60" text-anchor="middle">☀️</text>
+          <text class="flow-cap" x="404" y="38" text-anchor="start">Solar</text>
+          <text class="flow-val num" id="fv-solar" x="404" y="57" text-anchor="start">—</text>
+          <text class="flow-sub" id="fs-solar" x="404" y="72" text-anchor="start"></text>
+        </g>
+
+        <!-- Battery node (left) -->
+        <g>
+          <circle class="flow-node-bg" cx="116" cy="166" r="30" stroke="rgba(52,211,153,.5)"/>
+          <text class="flow-icon" x="116" y="174" text-anchor="middle">🔋</text>
+          <text class="flow-cap" x="116" y="120" text-anchor="middle">Battery</text>
+          <text class="flow-val num" id="fv-batt" x="116" y="224" text-anchor="middle">—</text>
+          <text class="flow-sub" id="fs-batt" x="116" y="240" text-anchor="middle"></text>
+        </g>
+
+        <!-- Grid node (bottom) -->
+        <g>
+          <circle class="flow-node-bg" cx="360" cy="282" r="30" stroke="rgba(96,165,250,.5)"/>
+          <text class="flow-icon" x="360" y="290" text-anchor="middle">🗼</text>
+          <text class="flow-cap" x="404" y="272" text-anchor="start">Grid</text>
+          <text class="flow-val num" id="fv-grid" x="404" y="291" text-anchor="start">—</text>
+          <text class="flow-sub" id="fs-grid" x="404" y="306" text-anchor="start"></text>
+        </g>
+
+        <!-- Home node (right upper) -->
+        <g>
+          <circle class="flow-node-bg" cx="606" cy="94" r="30" stroke="rgba(251,113,133,.5)"/>
+          <text class="flow-icon" x="606" y="102" text-anchor="middle">🏠</text>
+          <text class="flow-cap" x="648" y="80" text-anchor="start">Home</text>
+          <text class="flow-val num" id="fv-home" x="648" y="99" text-anchor="start">—</text>
+        </g>
+
+        <!-- Miner node (right lower) -->
+        <g>
+          <circle class="flow-node-bg" cx="606" cy="238" r="30" stroke="rgba(167,139,250,.5)"/>
+          <text class="flow-icon" x="606" y="246" text-anchor="middle">⛏️</text>
+          <text class="flow-cap" x="648" y="224" text-anchor="start">Miners</text>
+          <text class="flow-val num" id="fv-miner" x="648" y="243" text-anchor="start">—</text>
+          <text class="flow-sub" id="fs-miner" x="648" y="258" text-anchor="start"></text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="side-col">
+      <!-- Battery ring -->
+      <div class="card batt-card">
+        <div class="soc-ring-wrap">
+          <svg viewBox="0 0 118 118">
+            <circle class="soc-ring-bg" cx="59" cy="59" r="51"/>
+            <circle class="soc-ring-fg" id="soc-ring" cx="59" cy="59" r="51"
+                    stroke-dasharray="320.4" stroke-dashoffset="320.4"/>
+          </svg>
+          <div class="soc-ring-center">
+            <div class="soc-num num" id="soc-value">—</div>
+            <div class="soc-cap">battery</div>
+          </div>
+        </div>
+        <div class="batt-meta">
+          <span class="badge badge-gray" id="batt-badge">—</span>
+          <div class="bm-power num" id="batt-power">—</div>
+          <div class="card-sub" id="batt-cap-note"></div>
+        </div>
+      </div>
+
+      <!-- Smart Start -->
+      <div class="card smart-card">
+        <div class="sc-row">
+          <div class="card-label" style="margin:0;">🧠 Smart Start</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="badge badge-gray" id="smart-badge">Idle</span>
+            <button id="smart-hold-btn" data-held="0" onclick="toggleSmartHold()">Hold</button>
+          </div>
+        </div>
+        <div class="sc-stats">
+          <div class="sc-stat" id="smart-sunny-row"><span>Sunny hours left</span><b id="smart-sunny">—</b></div>
+          <div class="sc-stat" id="smart-threshold-row"><span>Effective SOC ON</span><b id="smart-threshold">—</b></div>
+          <div class="sc-stat" id="smart-pv-row"><span>PV gate</span><b id="smart-pv-gate">—</b></div>
+        </div>
+        <div id="eod-projection"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Mining control ── -->
+  <div class="card mining-card">
+    <div class="mining-head">
+      <div class="card-label" style="margin:0;">🎛 Mining Control</div>
+      <div class="ramp-chips" id="ramp-chips"></div>
+    </div>
+    <div id="miners-list"></div>
+    <div class="mining-foot" id="miner-threshold">SOC ON: —</div>
+  </div>
+
+  <!-- ── Stats row ── -->
+  <div class="stats-row">
+    <div class="card">
+      <div class="card-label">⛏ Sats Today</div>
+      <div class="card-value num" id="pool-sats-today" style="font-size:21px;">—</div>
+      <div class="stat-usd num" id="pool-today-usd">—</div>
+      <div class="card-sub num" id="pool-hashrate"></div>
+    </div>
+    <div class="card">
+      <div class="card-label">💰 Unpaid</div>
+      <div class="card-value num" id="pool-sats-unpaid" style="font-size:21px;">—</div>
+      <div class="stat-usd num" id="pool-unpaid-usd">—</div>
+      <div class="card-sub num" id="pool-shares"></div>
+    </div>
+    <div class="card">
+      <div class="card-label">₿ BTC Price</div>
+      <div class="card-value num" id="btc-price" style="font-size:21px;">—</div>
+      <div class="card-sub" id="btc-price-sub">mempool.space</div>
+    </div>
+    <div class="card">
+      <div class="card-label">💧 Dehumidifier</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;">
+        <span class="badge badge-gray" id="dehum-badge">—</span>
+        <span class="badge badge-green" id="dehum-auto-badge" style="display:none;">Auto</span>
+        <span class="card-value num" id="dehum-humidity" style="font-size:19px;margin-left:auto;">—</span>
+      </div>
+      <div class="card-sub" id="dehum-tank" style="display:none;color:var(--red);margin-top:4px;">⚠ Tank Full</div>
+      <div class="card-sub" id="dehum-error" style="display:none;font-size:10px;margin-top:4px;"></div>
+      <div class="dehum-btns">
+        <button class="btn-amber" id="dehum-on-btn" onclick="dehum(true)">ON</button>
+        <button class="btn-dim" id="dehum-off-btn" onclick="dehum(false)">OFF</button>
+      </div>
+      <div class="dehum-pips">
+        <div id="dehum-pip-0"></div><div id="dehum-pip-1"></div><div id="dehum-pip-2"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Weather strip ── -->
+  <div class="card wx-card">
+    <div class="wx-current">
+      <div class="wx-icon-big" id="wx-icon">—</div>
+      <div class="wx-meta">
+        <div class="wx-desc-text" id="wx-desc">—</div>
+        <div class="card-sub num" id="wx-temp">—</div>
+        <div class="card-sub num" id="wx-radiation">—</div>
+      </div>
+    </div>
+    <div class="hourly-scroll" id="hourly-row">
+      <div style="color:var(--muted);font-size:12px;padding:4px;">Configure location in Settings for forecast.</div>
+    </div>
+  </div>
+
+  <!-- ── Charts ── -->
+  <div class="charts-row">
+    <div class="card chart-card">
+      <div class="chart-header">
+        <h3 id="soc-chart-title">SOC &amp; Power (12h)</h3>
+        <div class="time-btns">
+          <button class="time-btn" data-hours="2">2h</button>
+          <button class="time-btn active" data-hours="12">12h</button>
+          <button class="time-btn" data-hours="24">24h</button>
+          <button class="time-btn" data-hours="168">7d</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="socChart"></canvas></div>
+    </div>
+    <div class="card chart-card">
+      <div class="chart-header"><h3>Daily Earnings (8d)</h3></div>
+      <div class="chart-wrap"><canvas id="dailySatsChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── Ramp activity ── -->
+  <div class="card" id="ramp-log-card">
+    <div class="chart-header">
+      <h3>⚡ Ramp Activity</h3>
+      <span id="ramp-log-mode" class="badge badge-gray" style="font-size:10px;">—</span>
+    </div>
+    <div id="ramp-log" class="ramp-log"></div>
+  </div>
+</main>
+
+<!-- ── Settings modal ── -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2>⚙ Settings <span id="settings-version" style="font-size:13px;font-weight:400;color:var(--muted);margin-left:6px;"></span></h2>
+      <button class="modal-close" onclick="closeSettings()">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <nav class="settings-sidebar">
+        <button class="settings-nav-item active" onclick="showPanel('solis',this)"><span class="nav-icon">☀️</span> Solis Cloud</button>
+        <button class="settings-nav-item" onclick="showPanel('miner',this)"><span class="nav-icon">⛏</span> Miners</button>
+        <button class="settings-nav-item" onclick="showPanel('system',this)"><span class="nav-icon">🔋</span> Solar System</button>
+        <button class="settings-nav-item" onclick="showPanel('control',this)"><span class="nav-icon">🎛</span> Control</button>
+        <button class="settings-nav-item" onclick="showPanel('smart',this)"><span class="nav-icon">🧠</span> Smart Start</button>
+        <button class="settings-nav-item" onclick="showPanel('location',this)"><span class="nav-icon">📍</span> Location</button>
+        <button class="settings-nav-item" onclick="showPanel('pool',this)"><span class="nav-icon">🏊</span> Pool</button>
+        <button class="settings-nav-item" onclick="showPanel('dehum',this)"><span class="nav-icon">💧</span> Dehum</button>
+        <button class="settings-nav-item" onclick="showPanel('alerts',this)"><span class="nav-icon">📡</span> Alerts</button>
+      </nav>
+
+      <div class="settings-content">
+
+        <!-- Solis Cloud -->
+        <div class="settings-panel active" id="panel-solis">
+          <div class="panel-title">Solis Cloud API</div>
+          <div class="form-group">
+            <label>API Key</label>
+            <input type="text" id="s-solis_api_key" placeholder="Your Solis API key" />
+          </div>
+          <div class="form-group">
+            <label>API Secret</label>
+            <div class="pwd-wrap">
+              <input type="password" id="s-solis_api_secret" placeholder="Your Solis API secret" autocomplete="new-password" />
+              <button type="button" class="pwd-toggle" onclick="togglePwd('s-solis_api_secret',this)" tabindex="-1">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Inverter Serial Number</label>
+            <input type="text" id="s-solis_inverter_sn" placeholder="Inverter SN" />
+            <div class="form-hint">Found in the Solis app under Device Info.</div>
+          </div>
+        </div>
+
+        <!-- Miners -->
+        <div class="settings-panel" id="panel-miner">
+          <div class="panel-title">Miners</div>
+          <div class="form-hint" style="margin-bottom:10px;">Smart Start controls both miners together. If one can't be reached, the other is still controlled. Leave X2 blank if you only have one miner.</div>
+          <div class="form-group">
+            <label>Miner X1 — IP Address</label>
+            <input type="text" id="s-miner_ip" placeholder="e.g. 192.168.1.50" />
+            <div class="form-hint">Local IP of your first LuxOS miner.</div>
+          </div>
+          <div class="form-group">
+            <label>Miner X1 — Power Draw (W)</label>
+            <input type="number" id="s-miner_power_w" step="10" min="0" placeholder="e.g. 3450" />
+          </div>
+          <div class="form-group">
+            <label>Miner X2 — IP Address</label>
+            <input type="text" id="s-miner2_ip" placeholder="e.g. 192.168.88.17" />
+            <div class="form-hint">Local IP of your second LuxOS miner (optional).</div>
+          </div>
+          <div class="form-group">
+            <label>Miner X2 — Power Draw (W)</label>
+            <input type="number" id="s-miner2_power_w" step="10" min="0" placeholder="e.g. 3450" />
+            <div class="form-hint">Combined draw is used to estimate whether PV output can offset mining load.</div>
+          </div>
+
+          <div class="panel-title" style="margin-top:16px;">Solar Power Ramp</div>
+          <div class="form-hint" style="margin-bottom:10px;">Dynamically dials each miner's power profile up and down to soak surplus solar — never exporting to the grid, while still charging the battery full by end of day.</div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-ramp_enabled" />
+            <label for="s-ramp_enabled">Enable dynamic power ramp</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-ramp_dry_run" />
+            <label for="s-ramp_dry_run">Dry-run — show the ramp's decisions but don't drive the miners yet</label>
+          </div>
+          <div class="form-group">
+            <label>Max profile per miner (ramp ceiling)</label>
+            <select id="s-miner_max_watts"></select>
+            <div class="form-hint">The ramp never pushes a miner above this profile. Populated from the miner's live profile ladder.</div>
+          </div>
+          <div class="form-group">
+            <label>Charge safety margin (×)</label>
+            <input type="number" id="s-ramp_charge_margin" step="0.05" min="1" placeholder="1.25" />
+            <div class="form-hint">Above 1 finishes the battery charge early, banking a buffer against forecast shortfalls (1.25 = finish ~20% sooner).</div>
+          </div>
+        </div>
+
+        <!-- Solar System -->
+        <div class="settings-panel" id="panel-system">
+          <div class="panel-title">Solar System</div>
+          <div class="form-group">
+            <label>Battery Capacity (kWh)</label>
+            <input type="number" id="s-battery_capacity_kwh" step="0.1" min="0" placeholder="e.g. 10.0" />
+            <div class="form-hint">Total usable battery capacity — used to estimate charge time.</div>
+          </div>
+          <div class="form-group">
+            <label>PV Peak Power (kW)</label>
+            <input type="number" id="s-pv_peak_kw" step="0.1" min="0" placeholder="e.g. 6.5" />
+            <div class="form-hint">Maximum output of your solar panels at full sun. Used to calculate solar efficiency % and project available power.</div>
+          </div>
+          <div class="form-group">
+            <label>Learned Efficiency Data</label>
+            <button type="button" id="btn-reset-eff" class="btn-ghost" style="padding:.35em .9em;font-size:.8em;">Reset</button>
+            <div class="form-hint">Clear per-hour efficiency data so it relearns from scratch. Do this after correcting PV Peak Power.</div>
+          </div>
+          <div class="form-group">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <label style="margin:0;">Efficiency by Month</label>
+              <select id="eff-month-select" style="font-size:12px;padding:2px 6px;width:auto;">
+                <option value="1">January</option><option value="2">February</option>
+                <option value="3">March</option><option value="4">April</option>
+                <option value="5">May</option><option value="6">June</option>
+                <option value="7">July</option><option value="8">August</option>
+                <option value="9">September</option><option value="10">October</option>
+                <option value="11">November</option><option value="12">December</option>
+              </select>
+            </div>
+            <div style="position:relative;height:180px;"><canvas id="eff-chart"></canvas></div>
+            <div id="eff-chart-empty" style="display:none;color:var(--muted);font-size:11px;margin-top:6px;">No efficiency data yet for this month — will populate after a few sunny days.</div>
+            <div class="form-hint" style="margin-top:6px;">Each bar = avg actual output ÷ theoretical max for that hour. Green = this month's data (≥3 samples), yellow = borrowed from nearest month.</div>
+          </div>
+        </div>
+
+        <!-- Control -->
+        <div class="settings-panel" id="panel-control">
+          <div class="panel-title">Basic Control</div>
+          <div class="form-two-col">
+            <div class="form-group">
+              <label>SOC to Start Mining (%)</label>
+              <input type="number" id="s-soc_on_threshold" step="0.5" min="0" max="100" />
+              <div class="form-hint">Miner turns ON when SOC rises above this.</div>
+            </div>
+            <div class="form-group">
+              <label>SOC to Stop Mining (%)</label>
+              <input type="number" id="s-soc_off_threshold" step="0.5" min="0" max="100" />
+              <div class="form-hint">Miner turns OFF when SOC falls below this. Set lower than Start to add a buffer against cloud cycling.</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Poll Interval (seconds)</label>
+            <input type="number" id="s-poll_interval_seconds" step="1" min="10" />
+            <div class="form-hint">How often to check the inverter and adjust the miner.</div>
+          </div>
+          <div class="panel-title" style="margin-top:18px;">Solis API Failsafe</div>
+          <div class="form-two-col">
+            <div class="form-group">
+              <label>Action when API is down</label>
+              <select id="s-api_fail_action">
+                <option value="stop">Stop miner (safe)</option>
+                <option value="keep">Keep current state</option>
+                <option value="start">Keep miner running</option>
+              </select>
+              <div class="form-hint">What to do when Solis cloud is unreachable.</div>
+            </div>
+            <div class="form-group">
+              <label>Trigger after N failures</label>
+              <input type="number" id="s-api_fail_cycles" step="1" min="1" max="20" />
+              <div class="form-hint">Consecutive failed polls before action.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Smart Start -->
+        <div class="settings-panel" id="panel-smart">
+          <div class="panel-title">Smart Start</div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-smart_start_enabled" />
+            <label for="s-smart_start_enabled">Enable Smart Start — lower SOC threshold on sunny days</label>
+          </div>
+          <div class="form-two-col">
+            <div class="form-group">
+              <label>Smart SOC ON (%)</label>
+              <input type="number" id="s-smart_soc_on_threshold" step="0.5" min="0" max="100" />
+              <div class="form-hint">Start early at this SOC on sunny days.</div>
+            </div>
+            <div class="form-group">
+              <label>Smart SOC OFF (%)</label>
+              <input type="number" id="s-smart_soc_off_threshold" step="0.5" min="0" max="100" />
+              <div class="form-hint">Stop at this SOC on sunny days.</div>
+            </div>
+          </div>
+          <div class="form-two-col">
+            <div class="form-group">
+              <label>Min Sunny Hours to Activate</label>
+              <input type="number" id="s-sunny_hours_threshold" step="0.5" min="0" />
+              <div class="form-hint">Remaining hours above radiation threshold today.</div>
+            </div>
+            <div class="form-group">
+              <label>Radiation Threshold (W/m²)</label>
+              <input type="number" id="s-radiation_threshold_wm2" step="10" min="0" />
+              <div class="form-hint">Counts as a "sunny hour" above this level.</div>
+            </div>
+          </div>
+          <div class="form-two-col">
+            <div class="form-group">
+              <label>Min PV Input to Start (W)</label>
+              <input type="number" id="s-smart_min_pv_w" step="100" min="0" />
+              <div class="form-hint">Smart Start won't turn on the miner until live PV input reaches this level — prevents midnight starts on sunny-day forecasts.</div>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top:.5em;">
+            <label style="display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="s-eod_soc_target_enabled" onchange="el('s-eod_soc_target').disabled=!this.checked" style="width:16px;height:16px;accent-color:var(--amber-deep);" />
+              Enable End-of-Day Battery Target
+            </label>
+            <div class="form-hint">When enabled, Smart Start will shut the miner off early if running it would cause the battery to fall below the target SOC at sunset. Enable only after a few days of load data has accumulated.</div>
+          </div>
+          <div class="form-group">
+            <label>End-of-Day SOC Target (%)</label>
+            <input type="number" id="s-eod_soc_target" step="1" min="0" max="100" placeholder="e.g. 80" />
+            <div class="form-hint">Target battery % to reach by end of solar generation each day.</div>
+          </div>
+        </div>
+
+        <!-- Location -->
+        <div class="settings-panel" id="panel-location">
+          <div class="panel-title">Location &amp; Weather</div>
+          <div class="form-group-row">
+            <div class="form-group">
+              <label>ZIP Code</label>
+              <input type="text" id="s-location_name" placeholder="e.g. 85001" maxlength="5" />
+            </div>
+            <button class="btn-amber" onclick="searchLocation()" style="margin-bottom:0;white-space:nowrap;padding:7px 14px;">Search</button>
+          </div>
+          <div class="form-hint" style="margin-top:6px;margin-bottom:12px;">Enter your 5-digit US ZIP code and click Search to set coordinates.</div>
+          <div class="form-two-col">
+            <div class="form-group">
+              <label>Latitude (auto-filled)</label>
+              <input type="number" id="s-location_lat" step="0.0001" readonly />
+            </div>
+            <div class="form-group">
+              <label>Longitude (auto-filled)</label>
+              <input type="number" id="s-location_lon" step="0.0001" readonly />
+            </div>
+          </div>
+        </div>
+
+        <!-- Pool -->
+        <div class="settings-panel" id="panel-pool">
+          <div class="panel-title">Lux Mining Pool</div>
+          <div class="form-group">
+            <label>API Key</label>
+            <div class="pwd-wrap">
+              <input type="password" id="s-lux_pool_api_key" placeholder="Your Luxor API key" autocomplete="new-password" />
+              <button type="button" class="pwd-toggle" onclick="togglePwd('s-lux_pool_api_key',this)" tabindex="-1">👁</button>
+            </div>
+            <div class="form-hint">Generate in Luxor dashboard → Account → API Keys.</div>
+          </div>
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="s-lux_pool_username" placeholder="Your Luxor username" />
+            <div class="form-hint">Your Luxor account username (not email).</div>
+          </div>
+          <div class="form-group">
+            <label>API Endpoint URL <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
+            <input type="text" id="s-lux_pool_api_url" placeholder="Leave blank to auto-detect" />
+          </div>
+        </div>
+
+        <!-- Dehumidifier -->
+        <div class="settings-panel" id="panel-dehum">
+          <div class="panel-title">Dehumidifier (Tuya Local)</div>
+          <div class="form-hint" style="margin-bottom:1em;">
+            Requires a Tuya developer account to obtain the local key.
+            Pair the device in Smart Life, then run <code>python -m tinytuya wizard</code>
+            on any PC on the same network to discover your Device ID and Local Key.
+          </div>
+          <div class="form-group">
+            <label>Device ID</label>
+            <input type="text" id="s-dehum_device_id" placeholder="e.g. bfabcd1234567890" />
+          </div>
+          <div class="form-group">
+            <label>Device IP</label>
+            <input type="text" id="s-dehum_ip" placeholder="e.g. 192.168.1.50" />
+            <div class="form-hint">Assign a static IP to the dehumidifier in your router.</div>
+          </div>
+          <div class="form-group">
+            <label>Local Key</label>
+            <div class="pwd-wrap">
+              <input type="password" id="s-dehum_local_key" placeholder="16-character local key" autocomplete="new-password" />
+              <button type="button" class="pwd-toggle" onclick="togglePwd('s-dehum_local_key',this)" tabindex="-1">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Tuya Protocol Version</label>
+            <input type="number" id="s-dehum_version" step="0.1" min="3.1" max="3.5" placeholder="3.3" />
+            <div class="form-hint">Usually 3.3 for modern devices. Try 3.4 or 3.5 if 3.3 fails.</div>
+          </div>
+          <div class="checkbox-group" style="margin-top:.5em;">
+            <input type="checkbox" id="s-dehum_auto_enabled" />
+            <label for="s-dehum_auto_enabled">Enable Auto Mode (run on excess solar)</label>
+          </div>
+          <div class="form-group">
+            <label>Excess Power Threshold (W)</label>
+            <input type="number" id="s-dehum_excess_threshold_w" step="50" min="0" placeholder="500" />
+            <div class="form-hint">Turn dehumidifier ON when grid export exceeds this. Turns OFF when export drops 200W below threshold.</div>
+          </div>
+          <div class="form-group">
+            <label>Minimum Run Time (minutes)</label>
+            <input type="number" id="s-dehum_min_run_minutes" step="1" min="0" placeholder="30" />
+            <div class="form-hint">Once auto turns ON, won't turn it back OFF for at least this long. Prevents short-cycling on passing clouds.</div>
+          </div>
+          <div class="form-group">
+            <label>Minimum Off Time (minutes)</label>
+            <input type="number" id="s-dehum_min_off_minutes" step="1" min="0" placeholder="15" />
+            <div class="form-hint">Once auto turns OFF, won't turn it back ON for at least this long.</div>
+          </div>
+          <div class="form-group">
+            <label>Manual Override Duration (hours)</label>
+            <input type="number" id="s-dehum_manual_override_hours" step="0.5" min="0" placeholder="2" />
+            <div class="form-hint">Pressing ON/OFF manually suspends auto mode for this many hours, then auto resumes.</div>
+          </div>
+        </div>
+
+        <!-- Alerts -->
+        <div class="settings-panel" id="panel-alerts">
+          <div class="panel-title">Telegram Bot</div>
+          <div class="form-group">
+            <label>Bot Token</label>
+            <div class="pwd-wrap">
+              <input type="password" id="s-telegram_bot_token" placeholder="123456:ABC-DEF..." autocomplete="new-password" />
+              <button type="button" class="pwd-toggle" onclick="togglePwd('s-telegram_bot_token',this)" tabindex="-1">👁</button>
+            </div>
+            <div class="form-hint">Create a bot via @BotFather on Telegram and paste the token here.</div>
+          </div>
+          <div class="form-group">
+            <label>Chat ID</label>
+            <input type="text" id="s-telegram_chat_id" placeholder="Your chat or group ID" />
+            <div class="form-hint">Message @userinfobot on Telegram to get your chat ID. For groups, add the bot and get the group ID.</div>
+          </div>
+          <div style="margin-bottom:14px;">
+            <button class="btn-amber" onclick="testTelegram()" style="font-size:12px;padding:6px 12px;">Send Test Message</button>
+            <span id="tg-test-result" style="font-size:12px;color:var(--muted);margin-left:10px;"></span>
+          </div>
+
+          <div class="panel-title" style="margin-top:4px;">Notify me when…</div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_miner_onoff" />
+            <label for="s-tg_miner_onoff">⛏ Miner starts or stops</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_smart_start" />
+            <label for="s-tg_smart_start">🧠 Smart Start activates / deactivates</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_api_failure" />
+            <label for="s-tg_api_failure">⚠️ Solis API goes down (and recovers)</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_soc_low" />
+            <label for="s-tg_soc_low">🔋 Battery drops below low-SOC threshold</label>
+          </div>
+          <div class="form-group" style="margin-left:24px;margin-top:-6px;">
+            <label>Low SOC alert threshold (%)</label>
+            <input type="number" id="s-tg_soc_low_pct" step="1" min="0" max="100" style="max-width:100px;" />
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_soc_full" />
+            <label for="s-tg_soc_full">🌞 Battery reaches 100%</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_hashrate_drop" />
+            <label for="s-tg_hashrate_drop">📉 Hashrate drops significantly (possible throttling)</label>
+          </div>
+          <div class="form-group" style="margin-left:24px;margin-top:-6px;">
+            <label>Trigger if hashrate drops by (%)</label>
+            <input type="number" id="s-tg_hashrate_drop_pct" step="1" min="5" max="100" style="max-width:100px;" />
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_sats_milestone" />
+            <label for="s-tg_sats_milestone">💰 Sats milestone reached today</label>
+          </div>
+          <div class="form-group" style="margin-left:24px;margin-top:-6px;">
+            <label>Milestone every (sats)</label>
+            <input type="number" id="s-tg_sats_milestone_amount" step="100" min="100" style="max-width:120px;" />
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_daily_summary" />
+            <label for="s-tg_daily_summary">📊 Daily mining summary</label>
+          </div>
+          <div class="form-group" style="margin-left:24px;margin-top:-6px;">
+            <label>Send summary at hour (0–23, your local time)</label>
+            <input type="number" id="s-tg_daily_hour" step="1" min="0" max="23" style="max-width:80px;" />
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_sunny_day_ahead" />
+            <label for="s-tg_sunny_day_ahead">☀️ Sunny day ahead — Smart Start will activate</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_weekly_recap" />
+            <label for="s-tg_weekly_recap">📅 Weekly sats recap</label>
+          </div>
+          <div class="form-group" style="margin-left:24px;margin-top:-6px;display:flex;gap:12px;flex-wrap:wrap;">
+            <div>
+              <label>Day</label>
+              <select id="s-tg_weekly_recap_day" style="margin-top:4px;width:auto;">
+                <option value="0">Monday</option><option value="1">Tuesday</option>
+                <option value="2">Wednesday</option><option value="3">Thursday</option>
+                <option value="4">Friday</option><option value="5">Saturday</option>
+                <option value="6">Sunday</option>
+              </select>
+            </div>
+            <div>
+              <label>Hour (0–23)</label>
+              <input type="number" id="s-tg_weekly_recap_hour" step="1" min="0" max="23" style="max-width:80px;margin-top:4px;" />
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /settings-content -->
+    </div><!-- /modal-body -->
+
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeSettings()">Cancel</button>
+      <button class="btn-amber" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/dashboard.js"></script>
+</body>
+</html>
