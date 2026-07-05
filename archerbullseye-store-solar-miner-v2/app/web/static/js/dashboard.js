@@ -69,7 +69,7 @@ function updateFlow(r, s, minersKw) {
   el('fv-grid').textContent = fmt(Math.abs(gw));
   const gdir = direction(gw, 'exporting', 'importing');
   el('fs-grid').textContent = gdir;
-  setFlow('fl-grid', Math.abs(gw) > MIN, gw > 0);    // fwd grid→hub (import); rev = exporting
+  setFlow('fl-grid', Math.abs(gw) > MIN, gw < 0);    // fwd hub→grid (export); rev = importing
 
   el('fv-home').textContent = fmt(lw);
   setFlow('fl-home', lw > MIN, false);               // hub → home
