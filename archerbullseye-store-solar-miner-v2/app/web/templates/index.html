@@ -35,13 +35,13 @@
       <svg viewBox="0 0 720 244" preserveAspectRatio="xMidYMid meet" aria-label="Live energy flow">
         <!-- static tracks -->
         <path id="tr-solar" class="flow-path" d="M 360 64 L 360 102"/>
-        <path id="tr-batt"  class="flow-path" d="M 122 122 L 337 122"/>
+        <path id="tr-batt"  class="flow-path" d="M 128 122 L 337 122"/>
         <path id="tr-grid"  class="flow-path" d="M 360 180 L 360 142"/>
         <path id="tr-home"  class="flow-path" d="M 381 111 C 460 92, 520 78, 584 64"/>
         <path id="tr-miner" class="flow-path" d="M 381 133 C 460 152, 520 166, 584 180"/>
         <!-- animated overlays (direction: toward hub by default, .rev = away) -->
         <path id="fl-solar" class="flow-anim" style="color:#fbbf24;stroke:#fbbf24;" d="M 360 64 L 360 102"/>
-        <path id="fl-batt"  class="flow-anim" style="color:#34d399;stroke:#34d399;" d="M 122 122 L 337 122"/>
+        <path id="fl-batt"  class="flow-anim" style="color:#34d399;stroke:#34d399;" d="M 128 122 L 337 122"/>
         <path id="fl-grid"  class="flow-anim" style="color:#60a5fa;stroke:#60a5fa;" d="M 360 180 L 360 142"/>
         <path id="fl-home"  class="flow-anim" style="color:#fb7185;stroke:#fb7185;" d="M 381 111 C 460 92, 520 78, 584 64"/>
         <path id="fl-miner" class="flow-anim" style="color:#a78bfa;stroke:#a78bfa;" d="M 381 133 C 460 152, 520 166, 584 180"/>
@@ -62,13 +62,17 @@
           <text class="flow-sub" id="fs-solar" x="396" y="57" text-anchor="start"></text>
         </g>
 
-        <!-- Battery node (left) -->
+        <!-- Battery node (left) — the SOC ring gauge lives here -->
         <g>
-          <circle class="flow-node-bg" cx="96" cy="122" r="25" stroke="rgba(52,211,153,.5)"/>
-          <text class="flow-icon" x="96" y="129" text-anchor="middle">🔋</text>
-          <text class="flow-cap" x="96" y="84" text-anchor="middle">Battery</text>
-          <text class="flow-val num" id="fv-batt" x="96" y="170" text-anchor="middle">—</text>
-          <text class="flow-sub" id="fs-batt" x="96" y="184" text-anchor="middle"></text>
+          <circle class="flow-node-bg" cx="96" cy="122" r="27" stroke="transparent"/>
+          <circle cx="96" cy="122" r="27" fill="none" stroke="rgba(148,163,184,.14)" stroke-width="5"/>
+          <circle id="soc-ring" cx="96" cy="122" r="27" fill="none" stroke="#34d399" stroke-width="5"
+                  stroke-linecap="round" stroke-dasharray="169.65" stroke-dashoffset="169.65"
+                  transform="rotate(-90 96 122)" style="transition: stroke-dashoffset .8s ease, stroke .5s ease;"/>
+          <text id="soc-value" class="soc-svg-num num" x="96" y="126.5" text-anchor="middle">—</text>
+          <text class="flow-cap" x="96" y="80" text-anchor="middle">Battery</text>
+          <text class="flow-val num" id="fv-batt" x="96" y="172" text-anchor="middle">—</text>
+          <text class="flow-sub" id="fs-batt" x="96" y="186" text-anchor="middle"></text>
         </g>
 
         <!-- Grid node (bottom) -->
@@ -100,24 +104,13 @@
     </div>
 
     <div class="side-col">
-      <!-- Battery ring -->
-      <div class="card batt-card">
-        <div class="soc-ring-wrap">
-          <svg viewBox="0 0 118 118">
-            <circle class="soc-ring-bg" cx="59" cy="59" r="51"/>
-            <circle class="soc-ring-fg" id="soc-ring" cx="59" cy="59" r="51"
-                    stroke-dasharray="320.4" stroke-dashoffset="320.4"/>
-          </svg>
-          <div class="soc-ring-center">
-            <div class="soc-num num" id="soc-value">—</div>
-            <div class="soc-cap">battery</div>
-          </div>
+      <!-- Mining control (compact) -->
+      <div class="card mining-card">
+        <div class="mining-head">
+          <div class="card-label" style="margin:0;">🎛 Mining Control</div>
+          <span class="mining-foot" id="miner-threshold" style="margin:0;">SOC ON: —</span>
         </div>
-        <div class="batt-meta">
-          <span class="badge badge-gray" id="batt-badge">—</span>
-          <div class="bm-power num" id="batt-power">—</div>
-          <div class="card-sub" id="batt-cap-note"></div>
-        </div>
+        <div id="miners-list"></div>
       </div>
 
       <!-- Smart Start -->
@@ -139,15 +132,33 @@
     </div>
   </div>
 
-  <!-- ── Mining control + stats ── -->
+  <!-- ── Forecast + ramp activity + stats ── -->
   <div class="mid-row">
-    <div class="card mining-card">
-      <div class="mining-head">
-        <div class="card-label" style="margin:0;">🎛 Mining Control</div>
-        <div class="ramp-chips" id="ramp-chips"></div>
+    <div class="left-col">
+      <div class="card wx-card">
+        <div class="wx-current">
+          <div class="wx-icon-big" id="wx-icon">—</div>
+          <div class="wx-meta">
+            <div class="wx-desc-text" id="wx-desc">—</div>
+            <div class="card-sub num" id="wx-temp">—</div>
+            <div class="card-sub num" id="wx-radiation">—</div>
+          </div>
+        </div>
+        <div class="hourly-scroll" id="hourly-row">
+          <div style="color:var(--muted);font-size:12px;padding:4px;">Configure location in Settings for forecast.</div>
+        </div>
       </div>
-      <div id="miners-list"></div>
-      <div class="mining-foot" id="miner-threshold">SOC ON: —</div>
+
+      <div class="card" id="ramp-log-card">
+        <div class="chart-header">
+          <h3>⚡ Ramp Activity</h3>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <div class="ramp-chips" id="ramp-chips"></div>
+            <span id="ramp-log-mode" class="badge badge-gray" style="font-size:10px;">—</span>
+          </div>
+        </div>
+        <div id="ramp-log" class="ramp-log"></div>
+      </div>
     </div>
 
     <div class="stats-grid">
@@ -188,22 +199,7 @@
     </div>
   </div>
 
-  <!-- ── Weather strip ── -->
-  <div class="card wx-card">
-    <div class="wx-current">
-      <div class="wx-icon-big" id="wx-icon">—</div>
-      <div class="wx-meta">
-        <div class="wx-desc-text" id="wx-desc">—</div>
-        <div class="card-sub num" id="wx-temp">—</div>
-        <div class="card-sub num" id="wx-radiation">—</div>
-      </div>
-    </div>
-    <div class="hourly-scroll" id="hourly-row">
-      <div style="color:var(--muted);font-size:12px;padding:4px;">Configure location in Settings for forecast.</div>
-    </div>
-  </div>
-
-  <!-- ── Charts + ramp activity ── -->
+  <!-- ── Charts ── -->
   <div class="charts-row">
     <div class="card chart-card chart-main">
       <div class="chart-header">
@@ -220,13 +216,6 @@
     <div class="card chart-card chart-side">
       <div class="chart-header"><h3>Daily Earnings (8d)</h3></div>
       <div class="chart-wrap"><canvas id="dailySatsChart"></canvas></div>
-    </div>
-    <div class="card chart-side" id="ramp-log-card">
-      <div class="chart-header">
-        <h3>⚡ Ramp Activity</h3>
-        <span id="ramp-log-mode" class="badge badge-gray" style="font-size:10px;">—</span>
-      </div>
-      <div id="ramp-log" class="ramp-log"></div>
     </div>
   </div>
 </main>

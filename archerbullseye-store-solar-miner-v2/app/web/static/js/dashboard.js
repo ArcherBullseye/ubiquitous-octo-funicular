@@ -79,15 +79,16 @@ function updateFlow(r, s, minersKw) {
   setFlow('fl-miner', mw > MIN, false);              // hub → miners
 }
 
-// ── SOC ring ───────────────────────────────────────────────────
-const RING_C = 2 * Math.PI * 51;
+// ── SOC ring (battery node in the flow diagram) ────────────────
 function updateSocRing(soc) {
   const ring = el('soc-ring');
-  ring.style.strokeDashoffset = String(RING_C * (1 - Math.max(0, Math.min(100, soc)) / 100));
+  const c = 2 * Math.PI * ring.r.baseVal.value;
+  ring.setAttribute('stroke-dasharray', String(c));
+  ring.style.strokeDashoffset = String(c * (1 - Math.max(0, Math.min(100, soc)) / 100));
   ring.style.stroke = socColor(soc);
   const numEl = el('soc-value');
   numEl.textContent = soc.toFixed(1) + '%';
-  numEl.style.color = socColor(soc);
+  numEl.style.fill = socColor(soc);
 }
 
 // ── Charts ─────────────────────────────────────────────────────
@@ -306,12 +307,6 @@ async function refresh() {
     const r = s.readings;
     if (r) {
       updateSocRing(r.soc);
-      const bw = r.battery_power_w;
-      const bdir = direction(bw, 'charging', 'discharging');
-      el('batt-power').textContent = fmt(Math.abs(bw));
-      const battBadge = el('batt-badge');
-      battBadge.textContent = bdir;
-      battBadge.className = 'badge ' + (bdir === 'charging' ? 'badge-green' : bdir === 'discharging' ? 'badge-amber' : 'badge-gray');
 
       // Total live hashrate across miners for the flow diagram sub-label
       let ths = 0;
@@ -496,9 +491,6 @@ function _renderRampChips(s) {
   if (!box) return;
   const p = s.ramp;
   if (!p) { box.innerHTML = ''; return; }
-  const mode = p.dry_run
-    ? '<span class="badge badge-amber">Ramp dry-run</span>'
-    : '<span class="badge badge-green">Ramp armed</span>';
   const hw = p.headroom_w || 0;
   const chips = [
     `<span class="chip">${hw >= 0 ? 'surplus' : 'deficit'} <b>${(hw / 1000).toFixed(2)} kW</b></span>`,
@@ -507,7 +499,7 @@ function _renderRampChips(s) {
   ];
   if (p.needs_battery_capacity)
     chips.push('<span class="chip warn">set battery capacity to arm</span>');
-  box.innerHTML = chips.join('') + mode;
+  box.innerHTML = chips.join('');
 }
 
 // Green (low power) → amber → red (high power) for a filled step i of n.
