@@ -4,7 +4,7 @@ name: Resell Tracker
 tagline: Track retail arbitrage buys, sells, and profits
 icon: https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 category: finance
-version: "1.4.0"
+version: "1.4.1"
 port: 3001
 description: >-
   Resell Tracker is a retail arbitrage management app that runs entirely on your Umbrel home server.
@@ -51,13 +51,14 @@ repo: https://github.com/ArcherBullseye/resell-tracker
 support: https://github.com/ArcherBullseye/resell-tracker/issues
 dependencies: []
 releaseNotes: >-
-  v1.4.0: Hands-off deal scanning. New Deals tab browses every scanned product
-  with filters, price history, and one-click add-to-tracker. Add Watches to
-  re-scan clearance pages on a schedule via the browser extension, which now
-  sends results straight to the app (no more file download/upload). Telegram
-  alerts fire automatically for big discounts and price drops, with per-product
-  dedupe and configurable thresholds. Also includes the v1.3.14 Lowe's
-  pagination fix (follows real Next links from server HTML).
+  v1.4.1: Mark items as Returned. New Returned button in item details records a
+  full-refund return to the retailer -- the item leaves inventory and its cost
+  no longer counts toward invested, revenue, or profit. Returned items show a
+  badge with the refund amount and date, and the return can be undone. Fixed
+  the Store / Source field never saving; it is now a dropdown (Lowe's, Home
+  Depot, TSC, Target, Walmart, Amazon, Other) that persists and powers a new
+  By Store analytics breakdown with per-store return counts. Needs Attention
+  now flags items at 20 days instead of 45, while a return is still possible.
 path: ""
 defaultUsername: ""
 defaultPassword: ""
