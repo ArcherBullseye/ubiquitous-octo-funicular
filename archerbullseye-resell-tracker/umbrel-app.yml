@@ -4,7 +4,7 @@ name: Resell Tracker
 tagline: Track retail arbitrage buys, sells, and profits
 icon: https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 category: finance
-version: "1.4.1"
+version: "1.5.0"
 port: 3001
 description: >-
   Resell Tracker is a retail arbitrage management app that runs entirely on your Umbrel home server.
@@ -51,14 +51,15 @@ repo: https://github.com/ArcherBullseye/resell-tracker
 support: https://github.com/ArcherBullseye/resell-tracker/issues
 dependencies: []
 releaseNotes: >-
-  v1.4.1: Mark items as Returned. New Returned button in item details records a
-  full-refund return to the retailer -- the item leaves inventory and its cost
-  no longer counts toward invested, revenue, or profit. Returned items show a
-  badge with the refund amount and date, and the return can be undone. Fixed
-  the Store / Source field never saving; it is now a dropdown (Lowe's, Home
-  Depot, TSC, Target, Walmart, Amazon, Other) that persists and powers a new
-  By Store analytics breakdown with per-store return counts. Needs Attention
-  now flags items at 20 days instead of 45, while a return is still possible.
+  v1.5.0: Deal scoring + eBay fix. The Deals tab now ranks buys by a score =
+  projected net profit x sell-through, showing estimated net, ROI, and the
+  resale basis on every card, with new Best-buys / Most-profit / Highest-ROI
+  sorts. Configurable marketplace fee and shipping estimate feed the math.
+  eBay price lookups were migrated from the retired Finding API to the modern
+  Browse API (OAuth2) -- add your Cert ID alongside the App ID in Settings.
+  Also includes v1.4.1: mark items Returned for a full refund (excluded from
+  stats), the Store / Source dropdown with By Store analytics, and Needs
+  Attention flagging at 20 days.
 path: ""
 defaultUsername: ""
 defaultPassword: ""
