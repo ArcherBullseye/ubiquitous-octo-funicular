@@ -274,6 +274,21 @@ class ControlLoop:
                                                "error_starting", "error_stopping")
                                    if c in acts), "none")
 
+                # Expected draw of whatever is currently commanded on — the
+                # baseline the underpower alert compares Solis's actual
+                # circuit reading against. Under the ramp, the commanded
+                # target itself (not nameplate) is the right baseline since
+                # it moves every cycle.
+                if ramp_armed:
+                    expected_miner_w = float(ramp_plan.get("target_total_w") or 0.0)
+                else:
+                    expected_miner_w = 0.0
+                    for m in miners:
+                        r = per_miner.get(m.label)
+                        if r and r["reachable"] and r["running"]:
+                            key = "miner_power_w" if m.label == "X1" else "miner2_power_w"
+                            expected_miner_w += float(settings.get(key) or 0.0)
+
                 self.notifier.send_cycle_alerts(
                     settings=settings, soc=soc, actually_mining=actually_mining,
                     smart_active=smart.active, soc_on=soc_on,
@@ -282,6 +297,8 @@ class ControlLoop:
                     hashrate_mhs=hashrate_mhs,
                     smart_hold_active=smart_hold_active,
                     ramp_armed=ramp_armed,
+                    expected_miner_w=expected_miner_w,
+                    actual_miner_w=readings["backup_power_w"],
                 )
 
         elif not miners and error_str is None:
