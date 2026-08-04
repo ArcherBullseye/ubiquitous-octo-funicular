@@ -47,6 +47,8 @@ class Notifier:
         self.soc_low_notified: Optional[bool] = None
         self.soc_full_notified: Optional[bool] = None
         self.prev_hashrate_mhs: Optional[float] = None
+        self.underpower_since = None
+        self.underpower_notified = False
         self.last_daily_date: Optional[str] = today
         self.last_weekly_recap_date: Optional[str] = today
         self.last_sunny_day_date: Optional[str] = today
@@ -56,7 +58,9 @@ class Notifier:
     def send_cycle_alerts(self, settings: dict, soc: Optional[float], actually_mining: bool,
                           smart_active: bool, soc_on: float, effective_soc_on: float,
                           effective_soc_off: float, hashrate_mhs: float,
-                          smart_hold_active: bool = False, ramp_armed: bool = False) -> None:
+                          smart_hold_active: bool = False, ramp_armed: bool = False,
+                          expected_miner_w: float = 0.0,
+                          actual_miner_w: Optional[float] = None) -> None:
         bot = get_bot(settings)
         if not bot:
             return
@@ -142,6 +146,51 @@ class Notifier:
                             f"Possible thermal throttling or board issue"
                         )
                 self.prev_hashrate_mhs = hashrate_mhs
+
+        # ── Underpower (miner drawing far less than commanded) ────
+        # Compares what Solis reports on the mining circuit against the
+        # expected draw of whatever's currently commanded on (nameplate, or
+        # the live ramp target while armed). Wide variance + a sustained
+        # delay before firing, since a board can silently drop out (e.g.
+        # thermal fault) without the miner going unreachable or the
+        # hashrate figure updating right away.
+        if settings.get("tg_underpower"):
+            comparable = (actually_mining and expected_miner_w > 0
+                          and actual_miner_w is not None)
+            if comparable:
+                variance_pct = float(settings.get("tg_underpower_variance_pct") or 40.0)
+                threshold_w = expected_miner_w * (1 - variance_pct / 100)
+                if actual_miner_w < threshold_w:
+                    if self.underpower_since is None:
+                        self.underpower_since = local_now(tz)
+                    elif not self.underpower_notified:
+                        delay_min = float(settings.get("tg_underpower_delay_min") or 20.0)
+                        elapsed_min = (local_now(tz) - self.underpower_since).total_seconds() / 60
+                        if elapsed_min >= delay_min:
+                            self.underpower_notified = True
+                            bot.send(
+                                f"🪫 <b>Miner power output low</b>\n"
+                                f"Reporting {actual_miner_w:.0f}W, expected ~{expected_miner_w:.0f}W\n"
+                                f"Sustained for {elapsed_min:.0f} min — possible dead board "
+                                f"or offline unit"
+                            )
+                else:
+                    # Genuine at-or-above-threshold reading — real recovery.
+                    if self.underpower_notified:
+                        bot.send(
+                            f"✅ <b>Miner power output back to normal</b>\n"
+                            f"Reporting {actual_miner_w:.0f}W"
+                        )
+                    self.underpower_since = None
+                    self.underpower_notified = False
+            elif not actually_mining:
+                # Miner genuinely stopped — clear so a future run starts fresh.
+                self.underpower_since = None
+                self.underpower_notified = False
+            # else: still (believed) mining but not comparable this cycle
+            # (e.g. expected_miner_w not configured yet, or a momentary gap)
+            # — leave any running timer untouched rather than let a blip
+            # restart the delay window.
 
         # ── Sats milestone ───────────────────────────────────────
         if settings.get("tg_sats_milestone"):

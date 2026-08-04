@@ -584,6 +584,28 @@
             <input type="number" id="s-tg_hashrate_drop_pct" step="1" min="5" max="100" style="max-width:100px;" />
           </div>
           <div class="checkbox-group">
+            <input type="checkbox" id="s-tg_underpower" />
+            <label for="s-tg_underpower">🪫 Miner draws far less power than commanded (dead board)</label>
+          </div>
+          <div class="form-group" style="margin-left:24px;margin-top:-6px;display:flex;gap:12px;flex-wrap:wrap;">
+            <div>
+              <label>Trigger if below expected by (%)</label>
+              <input type="number" id="s-tg_underpower_variance_pct" step="5" min="5" max="90" style="max-width:100px;" />
+            </div>
+            <div>
+              <label>Sustained for (minutes)</label>
+              <input type="number" id="s-tg_underpower_delay_min" step="5" min="1" max="180" style="max-width:100px;" />
+            </div>
+          </div>
+          <div class="form-hint" style="margin-left:24px;margin-top:-8px;">
+            Compares what the Solis inverter reports on the mining circuit against
+            what your miners are currently commanded to draw. Wide defaults (40% /
+            20 min) avoid false alarms from normal power swings — tighten if you
+            want to catch smaller drops sooner. Requires <b>Miner nameplate power
+            (W)</b> to be set under Settings → Miners for each configured miner —
+            without it there's nothing to compare against and this stays silent.
+          </div>
+          <div class="checkbox-group">
             <input type="checkbox" id="s-tg_sats_milestone" />
             <label for="s-tg_sats_milestone">💰 Sats milestone reached today</label>
           </div>
