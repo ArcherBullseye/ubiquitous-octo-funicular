@@ -4,7 +4,7 @@ name: Resell Tracker
 tagline: Track retail arbitrage buys, sells, and profits
 icon: https://raw.githubusercontent.com/ArcherBullseye/resell-tracker/main/umbrel-app-icon.jpg
 category: finance
-version: "1.5.0"
+version: "1.5.1"
 port: 3001
 description: >-
   Resell Tracker is a retail arbitrage management app that runs entirely on your Umbrel home server.
@@ -51,7 +51,11 @@ repo: https://github.com/ArcherBullseye/resell-tracker
 support: https://github.com/ArcherBullseye/resell-tracker/issues
 dependencies: []
 releaseNotes: >-
-  v1.5.0: Deal scoring + eBay fix. The Deals tab now ranks buys by a score =
+  v1.5.1: MSRP at a glance. Add an optional MSRP when adding or editing an item.
+  Each item card now shows an MSRP line with a percent-off-MSRP pill based on
+  your buy price, and the edit form shows a live "Buy is X% off MSRP" readout so
+  a good price is obvious while you enter it.
+  Also includes v1.5.0: Deal scoring + eBay fix. The Deals tab now ranks buys by a score =
   projected net profit x sell-through, showing estimated net, ROI, and the
   resale basis on every card, with new Best-buys / Most-profit / Highest-ROI
   sorts. Configurable marketplace fee and shipping estimate feed the math.
