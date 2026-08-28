@@ -40,6 +40,12 @@ description: >-
   in the background and survive a restart.
 
 
+  Rendering is separate and its cost depends on what you accept: a mute-only
+  edit copies the video and finishes in minutes, while any accepted cut forces
+  a full re-encode of the film. The review page tells you which one you are
+  about to get.
+
+
   Your movie library is picked up from the Umbrel's network shares and home
   folder. Ollama is optional -- without it the LLM and vision signals are
   simply skipped.
