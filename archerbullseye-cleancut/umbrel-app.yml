@@ -1,0 +1,59 @@
+manifestVersion: 1
+id: archerbullseye-cleancut
+name: cleancut
+tagline: Auto-edit movies for content, entirely on your own hardware
+icon: https://raw.githubusercontent.com/ArcherBullseye/cleancut/main/icon.svg
+category: media
+version: "1.0.0"
+port: 3003
+description: >-
+  cleancut scans a movie in your library and produces a cleaned copy -- muting
+  profanity, cutting explicit scenes, and rewriting subtitles to softer text.
+  Nothing leaves your Umbrel. All detection runs locally.
+
+
+  Signals used:
+
+  - Wordlist and context matching over the dialogue
+
+  - Whisper speech-to-text when a subtitle track is missing
+
+  - Density clustering to catch scenes that individual hits miss
+
+  - NudeNet frame analysis for explicit nudity
+
+  - Ollama LLM dialogue classification and LLaVA vision, when the Ollama app is installed
+
+  - HuggingFace audio event classification for moans, screams, and gunshots
+
+
+  Every decision lands in an edit decision list you review in the browser
+  before anything is rendered -- with a thumbnail and a playable clip for each
+  proposed cut, so you approve, reject, retime, or add cuts by hand. Cuts snap
+  to shot boundaries, and visual-only detections need a second signal to
+  corroborate them before they fire.
+
+
+  Scans are slow on this class of hardware. The Fast preset takes roughly
+  15-30 minutes for a feature; Balanced takes 1-2 hours; Thorough turns on the
+  Ollama models and can take the better part of a day. Jobs run one at a time
+  in the background and survive a restart.
+
+
+  Your movie library is picked up from the Umbrel's network shares and home
+  folder. Ollama is optional -- without it the LLM and vision signals are
+  simply skipped.
+developer: ArcherBullseye
+website: https://github.com/ArcherBullseye/cleancut
+submitter: ArcherBullseye
+submission: https://github.com/ArcherBullseye/cleancut
+repo: https://github.com/ArcherBullseye/cleancut
+support: https://github.com/ArcherBullseye/cleancut/issues
+dependencies: []
+releaseNotes: >-
+  First release. Browse your library, scan a film, review every proposed cut
+  with thumbnails and clip previews, then render a cleaned copy with a softened
+  subtitle track.
+path: ""
+defaultUsername: ""
+defaultPassword: ""

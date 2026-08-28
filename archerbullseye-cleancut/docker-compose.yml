@@ -1,0 +1,26 @@
+version: "3.7"
+
+services:
+
+  app_proxy:
+    environment:
+      APP_HOST: archerbullseye-cleancut_server_1
+      APP_PORT: 3000
+
+  server:
+    image: ghcr.io/archerbullseye/cleancut-app:latest
+    volumes:
+      # App state: job database, EDLs, previews, downloaded model weights.
+      - ${APP_DATA_DIR}/data:/app/data
+      # Media. The network share is where a NAS library is mounted by umbrelOS;
+      # home covers anything kept on the Umbrel's own disk. Both are declared
+      # here rather than in setup notes because an app update regenerates this
+      # file and would silently drop a hand-added mount.
+      - ${UMBREL_ROOT}/network:/media/network
+      - ${UMBREL_ROOT}/home:/media/home
+    environment:
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - MEDIA_ROOTS=/media/network:/media/home
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama_ollama_1:11434}
+    restart: unless-stopped
