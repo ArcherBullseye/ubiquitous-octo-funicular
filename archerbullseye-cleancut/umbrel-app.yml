@@ -4,7 +4,7 @@ name: cleancut
 tagline: Auto-edit movies for content, entirely on your own hardware
 icon: https://raw.githubusercontent.com/ArcherBullseye/cleancut/main/icon.svg
 category: media
-version: "1.0.0"
+version: "1.0.1"
 port: 3003
 description: >-
   cleancut scans a movie in your library and produces a cleaned copy -- muting
@@ -57,9 +57,9 @@ repo: https://github.com/ArcherBullseye/cleancut
 support: https://github.com/ArcherBullseye/cleancut/issues
 dependencies: []
 releaseNotes: >-
-  First release. Browse your library, scan a film, review every proposed cut
-  with thumbnails and clip previews, then render a cleaned copy with a softened
-  subtitle track.
+  Fixes a packaging bug in 1.0.0 that left the detector wordlists out of the
+  image, so every scan failed immediately. The image now verifies at build time
+  that they are present.
 path: ""
 defaultUsername: ""
 defaultPassword: ""
