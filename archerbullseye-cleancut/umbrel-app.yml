@@ -4,7 +4,7 @@ name: cleancut
 tagline: Auto-edit movies for content, entirely on your own hardware
 icon: https://raw.githubusercontent.com/ArcherBullseye/cleancut/main/icon.svg
 category: media
-version: "1.0.4"
+version: "1.0.5"
 port: 3003
 description: >-
   cleancut scans a movie in your library and produces a cleaned copy -- muting
@@ -57,12 +57,13 @@ repo: https://github.com/ArcherBullseye/cleancut
 support: https://github.com/ArcherBullseye/cleancut/issues
 dependencies: []
 releaseNotes: >-
-  Fixes failed renders being reported as successful. Running the CLI as
-  `python -m cleancut` discarded its exit code, so the job queue read every
-  failure as a success -- a render that died inside ffmpeg was recorded as
-  Complete next to a zero-byte output file, with no error shown. The entry
-  point now propagates the exit code, and a render is only marked complete if
-  the file it produced is actually non-empty.
+  Softened subtitles now cover the same words the detector flags. The detector
+  matches inflected forms -- porno, fuckers, raped -- but the replacement map
+  holds only base forms, so those words were muted or cut in the audio while
+  still appearing in full in the subtitle track. The softener now folds in the
+  detector's own patterns and falls back to the longest matching base form.
+  Innocent words are unaffected: assistant, assume and assessing stay as they
+  are.
 path: ""
 defaultUsername: ""
 defaultPassword: ""
