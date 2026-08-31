@@ -4,7 +4,7 @@ name: cleancut
 tagline: Auto-edit movies for content, entirely on your own hardware
 icon: https://raw.githubusercontent.com/ArcherBullseye/cleancut/main/icon.svg
 category: media
-version: "1.0.3"
+version: "1.0.4"
 port: 3003
 description: >-
   cleancut scans a movie in your library and produces a cleaned copy -- muting
@@ -57,13 +57,12 @@ repo: https://github.com/ArcherBullseye/cleancut
 support: https://github.com/ArcherBullseye/cleancut/issues
 dependencies: []
 releaseNotes: >-
-  Fixes renders failing on 5.1 surround sources. ffmpeg's AAC encoder refuses to
-  open when the channel layout is unspecified, which is how a DDP 5.1 file
-  decodes when its container carries no layout tag -- so any 5.1 source (the
-  norm for WEB-DL) died at the final mux, after the video had already been
-  encoded. The audio filter chain now pins a layout the encoder knows, and the
-  AAC bitrate scales with channel count (448k for 5.1) instead of a flat 192k
-  that gave surround about 32k per channel.
+  Fixes failed renders being reported as successful. Running the CLI as
+  `python -m cleancut` discarded its exit code, so the job queue read every
+  failure as a success -- a render that died inside ffmpeg was recorded as
+  Complete next to a zero-byte output file, with no error shown. The entry
+  point now propagates the exit code, and a render is only marked complete if
+  the file it produced is actually non-empty.
 path: ""
 defaultUsername: ""
 defaultPassword: ""
