@@ -4,7 +4,7 @@ name: cleancut
 tagline: Auto-edit movies for content, entirely on your own hardware
 icon: https://raw.githubusercontent.com/ArcherBullseye/cleancut/main/icon.svg
 category: media
-version: "1.0.2"
+version: "1.0.3"
 port: 3003
 description: >-
   cleancut scans a movie in your library and produces a cleaned copy -- muting
@@ -57,11 +57,13 @@ repo: https://github.com/ArcherBullseye/cleancut
 support: https://github.com/ArcherBullseye/cleancut/issues
 dependencies: []
 releaseNotes: >-
-  Picks better Ollama defaults for this hardware, measured rather than assumed:
-  llama3.2:3b for dialogue (about 2.4x faster than the previous llama3.1:8b) and
-  moondream for vision, replacing llava:7b. Settings now states what each costs
-  per shot. Also stops Whisper and ffmpeg progress redraws from flooding the
-  job log.
+  Fixes renders failing on 5.1 surround sources. ffmpeg's AAC encoder refuses to
+  open when the channel layout is unspecified, which is how a DDP 5.1 file
+  decodes when its container carries no layout tag -- so any 5.1 source (the
+  norm for WEB-DL) died at the final mux, after the video had already been
+  encoded. The audio filter chain now pins a layout the encoder knows, and the
+  AAC bitrate scales with channel count (448k for 5.1) instead of a flat 192k
+  that gave surround about 32k per channel.
 path: ""
 defaultUsername: ""
 defaultPassword: ""
