@@ -4,7 +4,7 @@ name: cleancut
 tagline: Auto-edit movies for content, entirely on your own hardware
 icon: https://raw.githubusercontent.com/ArcherBullseye/cleancut/main/icon.svg
 category: media
-version: "1.0.5"
+version: "1.0.6"
 port: 3003
 description: >-
   cleancut scans a movie in your library and produces a cleaned copy -- muting
@@ -57,13 +57,13 @@ repo: https://github.com/ArcherBullseye/cleancut
 support: https://github.com/ArcherBullseye/cleancut/issues
 dependencies: []
 releaseNotes: >-
-  Softened subtitles now cover the same words the detector flags. The detector
-  matches inflected forms -- porno, fuckers, raped -- but the replacement map
-  holds only base forms, so those words were muted or cut in the audio while
-  still appearing in full in the subtitle track. The softener now folds in the
-  detector's own patterns and falls back to the longest matching base form.
-  Innocent words are unaffected: assistant, assume and assessing stay as they
-  are.
+  Detectors now respect the per-category actions you set. The LLM, audio-event,
+  VLM and density detectors all hardcoded "cut", so a scan with violence set to
+  keep still cut every violent scene, and categories set to mute were cut
+  instead. That also made renders far slower than they needed to be: a cut
+  forces a full video re-encode, while a mute-only edit stream-copies the video
+  in minutes. A combined category takes the strongest action its parts ask for,
+  and is dropped only when every part is set to keep.
 path: ""
 defaultUsername: ""
 defaultPassword: ""
