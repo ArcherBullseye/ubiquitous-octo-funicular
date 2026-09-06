@@ -4,7 +4,7 @@ name: cleancut
 tagline: Auto-edit movies for content, entirely on your own hardware
 icon: https://raw.githubusercontent.com/ArcherBullseye/cleancut/main/icon.svg
 category: media
-version: "1.0.6"
+version: "1.0.7"
 port: 3003
 description: >-
   cleancut scans a movie in your library and produces a cleaned copy -- muting
@@ -41,9 +41,9 @@ description: >-
 
 
   Rendering is separate and its cost depends on what you accept: a mute-only
-  edit copies the video and finishes in minutes, while any accepted cut forces
-  a full re-encode of the film. The review page tells you which one you are
-  about to get.
+  edit normally copies compatible H.264/HEVC video and finishes in minutes,
+  while any accepted cut forces a full re-encode of the film. Other source
+  formats are converted for reliable macOS and browser playback.
 
 
   Your movie library is picked up from the Umbrel's network shares and home
@@ -57,13 +57,11 @@ repo: https://github.com/ArcherBullseye/cleancut
 support: https://github.com/ArcherBullseye/cleancut/issues
 dependencies: []
 releaseNotes: >-
-  Detectors now respect the per-category actions you set. The LLM, audio-event,
-  VLM and density detectors all hardcoded "cut", so a scan with violence set to
-  keep still cut every violent scene, and categories set to mute were cut
-  instead. That also made renders far slower than they needed to be: a cut
-  forces a full video re-encode, while a mute-only edit stream-copies the video
-  in minutes. A combined category takes the strongest action its parts ask for,
-  and is dropped only when every part is set to keep.
+  Fixes cleaned videos and review clips that macOS QuickTime or Safari could
+  not play. H.264 encodes now use the broadly supported yuv420p pixel format,
+  MP4 files are optimized for streaming, and copied HEVC streams use Apple's
+  hvc1 tag. Unsupported source video formats are converted to compatible H.264
+  while compatible H.264/HEVC sources retain the fast copy path.
 path: ""
 defaultUsername: ""
 defaultPassword: ""
