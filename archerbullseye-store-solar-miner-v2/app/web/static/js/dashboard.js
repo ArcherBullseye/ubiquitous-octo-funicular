@@ -288,6 +288,7 @@ async function refresh() {
     const resp = await fetch('/api/status');
     if (!resp.ok) return;
     const s = await resp.json();
+    updateHomeSensor(s.home_sensor);
 
     el('status-dot').classList.toggle('fresh', isFresh(s.last_updated));
     el('last-updated').textContent = 'Updated ' + timeSince(s.last_updated);
@@ -721,7 +722,7 @@ async function dehum(on) {
 // Fields are generic: every element with id "s-<setting_key>" is loaded from
 // and saved to that settings key. Types are coerced server-side by the
 // settings schema, so adding a setting = one row in config.py + one field here.
-const SECRET_KEYS = ['solis_api_secret', 'lux_pool_api_key', 'telegram_bot_token', 'dehum_local_key'];
+const SECRET_KEYS = ['solis_api_secret', 'lux_pool_api_key', 'telegram_bot_token', 'dehum_local_key', 'home_hub_key'];
 
 function _settingsFields() {
   return Array.from(document.querySelectorAll('[id^="s-"]'))
@@ -757,7 +758,9 @@ async function saveSettings() {
   const payload = {};
   for (const { inp, key } of _settingsFields()) {
     if (inp.type === 'checkbox') payload[key] = inp.checked;
-    else if (inp.type === 'number') payload[key] = Number(inp.value);
+    else if (inp.type === 'number') {
+      payload[key] = key.startsWith('home_temperature_alert_') && inp.value === '' ? null : Number(inp.value);
+    }
     else payload[key] = inp.value;
   }
   // Empty secret field = keep the stored secret (don't clear it).
@@ -771,7 +774,10 @@ async function saveSettings() {
       body: JSON.stringify(payload),
     });
     if (resp.ok) { closeSettings(); refresh(); }
-    else alert('Failed to save settings');
+    else {
+      const result = await resp.json().catch(() => ({}));
+      alert(result.error || 'Failed to save settings');
+    }
   } catch (e) { alert('Error saving settings: ' + e); }
 }
 
@@ -826,8 +832,13 @@ async function _populateMaxProfile(savedWatts) {
   }
 }
 
-function openSettings() {
+function openSettings(panel) {
   el('settings-modal').classList.add('open');
+  if (panel === 'home') {
+    const button = el('settings-home-nav');
+    showPanel(panel, button);
+    button.focus();
+  }
   loadSettings();
 }
 function closeSettings() {
@@ -990,3 +1001,46 @@ el('eff-month-select').addEventListener('change', function () {
 // ── Boot ───────────────────────────────────────────────────────
 setInterval(() => { refresh(); loadHistory(); loadDailySats(); loadMinerProfiles(); }, 30000);
 window.addEventListener('load', () => { refresh(); loadHistory(); loadDailySats(); loadMinerProfiles(); });
+
+
+function updateHomeSensor(sensor) {
+  const s = sensor || {};
+  const name = el('home-name');
+  name.textContent = s.name || 'Temperature & humidity';
+  name.title = name.textContent;
+  const times = s.updated_at || {};
+  const stale = metric => {
+    const updated = Date.parse(times[metric]);
+    return !Number.isFinite(updated) || Date.now() - updated > 30 * 60 * 1000;
+  };
+  const temp = s.temperature_c;
+  const humidity = s.humidity_pct;
+  el('home-temperature').textContent = temp == null ? '—' : (temp * 9 / 5 + 32).toFixed(1) + '°F';
+  el('home-humidity').textContent = humidity == null ? '—' : humidity.toFixed(0) + '%';
+  el('home-temperature').classList.toggle('stale-reading', stale('temperature_c'));
+  el('home-humidity').classList.toggle('stale-reading', stale('humidity_pct'));
+  el('home-temperature').title = 'Last received: ' + timeSince(times.temperature_c);
+  el('home-humidity').title = 'Last received: ' + timeSince(times.humidity_pct);
+  const dot = el('home-freshness');
+  const hasReading = temp != null || humidity != null;
+  const bothFresh = temp != null && humidity != null && !stale('temperature_c') && !stale('humidity_pct');
+  dot.dataset.state = !hasReading ? 'none' : bothFresh ? 'fresh' : 'stale';
+  const freshness = !hasReading ? 'No sensor readings yet' :
+    `${bothFresh ? 'Fresh readings' : 'Stale or incomplete readings'}. ` +
+    `Temperature: ${temp == null ? 'not received' : timeSince(times.temperature_c)}. ` +
+    `Humidity: ${humidity == null ? 'not received' : timeSince(times.humidity_pct)}.`;
+  dot.title = freshness;
+  dot.setAttribute('aria-label', freshness);
+  let label = 'Waiting', color = 'gray';
+  if (!sensor || s.status === 'unconfigured') label = 'Not configured';
+  else if (s.status === 'offline') { label = 'Offline'; color = 'amber'; }
+  else if (!s.mapping_configured) { label = 'Setup needed'; color = 'amber'; }
+  else if (temp != null || humidity != null) {
+    const old = stale('temperature_c') || stale('humidity_pct');
+    label = old ? 'Last reading' : 'Local'; color = old ? 'amber' : 'green';
+  }
+  el('home-status').textContent = label;
+  el('home-status').className = 'badge badge-' + color;
+  const stamps = Object.values(times).filter(Boolean).sort();
+  el('home-updated').textContent = s.error || (stamps.length ? 'Received ' + timeSince(stamps[0]) : 'Waiting for sensor report');
+}

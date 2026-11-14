@@ -461,3 +461,40 @@ main {
   .settings-nav-item { flex-direction: column; gap: 3px; padding: 8px 12px; font-size: 10px; flex-shrink: 0; }
   .settings-nav-item .nav-icon { font-size: 18px; }
 }
+
+
+/* Match the Home card to the dehumidifier column below it. */
+.smart-home-row { display: grid; grid-template-columns: 1.25fr 1fr; gap: clamp(8px, .9vw, 12px); min-width: 0; }
+.smart-home-row > .card { min-width: 0; }
+.smart-home-row .sc-row { flex-wrap: wrap; }
+.home-card { min-height: 170px; }
+.stats-grid > .acc-teal { min-height: 170px; }
+.home-card-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.home-card-head .card-label { margin: 0; }
+.home-settings-button { padding: 2px 5px; font-size: 12px; }
+.home-readings { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 7px; }
+.home-readings th, .home-readings td { padding: 3px 0; text-align: right; white-space: nowrap; }
+.home-readings th:first-child { text-align: left; padding-right: 4px; }
+.home-readings thead th { color: var(--muted); font-size: 11px; font-weight: 500; border-bottom: 1px solid var(--border-soft); }
+.home-readings thead th:nth-child(2) { width: 2.95rem; }
+.home-readings th:nth-child(2), .home-readings td:nth-child(2) { text-align: center; }
+.home-readings thead th:nth-child(3) { width: 3rem; }
+.home-readings tbody th { overflow: hidden; text-overflow: ellipsis; font-size: 11px; font-weight: 500; }
+.home-readings td { color: var(--text); font-size: 12px; font-weight: 700; }
+.home-humidity-reading { display: inline-flex; align-items: center; gap: 5px; }
+.home-freshness { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.home-freshness[data-state="fresh"] { background: var(--green); }
+.home-freshness[data-state="stale"] { background: var(--amber); }
+.home-readings .stale-reading { color: var(--muted); }
+.home-settings-section { min-inline-size: 0; border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 10px 0; }
+.home-settings-section legend, .home-settings-section summary { font-weight: 700; font-size: 13px; }
+.home-settings-section summary { cursor: pointer; }
+.home-settings-section .form-hint { margin: 7px 0; }
+.home-trigger-toggle { display: flex; align-items: baseline; gap: 6px; font-size: 12px; margin-bottom: 10px; }
+.home-footer { margin: 8px 0 4px; }
+#home-updated { font-size: 10px; overflow-wrap: anywhere; }
+@media (min-width: 1001px) {
+  .hero-row, .mid-row, .charts-row { grid-template-columns: minmax(0, 2.2fr) minmax(370px, 1fr); }
+}
+@media (max-width: 1000px) { .side-col { flex-direction: column; } }
+@media (max-width: 380px) { .smart-home-row, .stats-grid { grid-template-columns: 1fr; } }

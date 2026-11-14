@@ -11,6 +11,7 @@ To add a setting (e.g. for a future thermostat), add ONE row here and a form
 field in the dashboard — nothing else to wire up.
 """
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any, Dict
 
 
@@ -115,6 +116,26 @@ SCHEMA: Dict[str, Setting] = {
     "dehum_min_off_minutes":       Setting(15, "int"),
     "dehum_manual_override_hours": Setting(2, "int"),
 
+    # Local Zigbee hub (temperature / humidity, read only)
+    "home_hub_enabled": Setting(False, "bool"),
+    "home_hub_id": Setting("", "str"),
+    "home_hub_ip": Setting("", "str"),
+    "home_hub_key": Setting("", "str", secret=True),
+    "home_sensor_id": Setting("", "str"),
+    "home_sensor_node": Setting("", "str"),
+    "home_sensor_name": Setting("Temperature & humidity", "str"),
+    # TH02 Z3-P3Z (vtA4pDd6PLUZzXgZ): whole degrees Celsius and percent RH.
+    "home_temperature_dp": Setting("103", "str"),
+    "home_humidity_dp": Setting("101", "str"),
+    "home_temperature_divisor": Setting(1.0, "float"),
+    "home_humidity_divisor": Setting(1.0, "float"),
+    "home_temperature_unit": Setting("C", "str"),
+
+    # Home temperature trigger. Thresholds use the dashboard's Fahrenheit units.
+    "home_temperature_alert_enabled": Setting(False, "bool"),
+    "home_temperature_alert_low_f": Setting(40.0, "float"),
+    "home_temperature_alert_high_f": Setting(85.0, "float"),
+
     # ── Thermostats (future) ─────────────────────────────────────
     # Reserved for the thermostat device type (see devices/thermostat.py).
     # Wire real settings here when the integration lands.
@@ -122,6 +143,18 @@ SCHEMA: Dict[str, Setting] = {
 }
 
 DEFAULTS: Dict[str, Any] = {k: s.default for k, s in SCHEMA.items()}
+
+
+def home_temperature_range(settings):
+    """Return valid enabled Telegram temperature bounds, or None."""
+    if not settings.get("home_temperature_alert_enabled"):
+        return None
+    low = settings.get("home_temperature_alert_low_f")
+    high = settings.get("home_temperature_alert_high_f")
+    if (isinstance(low, (int, float)) and isinstance(high, (int, float))
+            and isfinite(low) and isfinite(high) and low < high):
+        return low, high
+    return None
 
 
 def coerce(key: str, value: Any) -> Any:

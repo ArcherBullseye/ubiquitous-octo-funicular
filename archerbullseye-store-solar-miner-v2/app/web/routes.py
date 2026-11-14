@@ -83,6 +83,12 @@ def create_blueprint(state: AppState, fleet: MinerFleet) -> Blueprint:
         # Schema-driven: drop round-tripped secret masks, coerce types.
         data = config.coerce_all(config.strip_masked(data))
 
+        if any(key.startswith("home_temperature_alert_") for key in data):
+            home_settings = {**get_settings(), **data}
+            if (home_settings["home_temperature_alert_enabled"]
+                    and config.home_temperature_range(home_settings) is None):
+                return jsonify({"error": "Enter a low temperature below the high temperature."}), 400
+
         # If a location name/ZIP is set but coordinates are missing, resolve
         # them server-side so weather keeps working even if Search was skipped.
         name = str(data.get("location_name") or "").strip()
@@ -97,6 +103,8 @@ def create_blueprint(state: AppState, fleet: MinerFleet) -> Blueprint:
                 pass
 
         update_settings(data)
+        if any(key.startswith("home_") for key in data) or {"telegram_bot_token", "telegram_chat_id"} & data.keys():
+            state.home_refresh.set()
 
         if float(data.get("location_lat") or 0) or float(data.get("location_lon") or 0):
             state.weather_refresh.set()

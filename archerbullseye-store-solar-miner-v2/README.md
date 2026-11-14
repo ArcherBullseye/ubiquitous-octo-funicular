@@ -67,3 +67,30 @@ python run.py            # http://localhost:3000
 ```
 
 or `docker compose up -d`.
+
+
+## Local Home sensor card
+
+The Home Assistant card beside Smart Start reads a Zigbee temperature and
+humidity sensor through a Tuya 3.4 gateway over the LAN. The row shows the
+sensor name, temperature in °F, humidity, and a freshness dot. Green means both
+values arrived within 30 minutes, amber means a value is stale or missing, and
+gray means no values have arrived.
+
+Open the gear on the Home card and expand **Hub & sensor setup**. Enter the
+hub IP address, hub device ID, local key, sensor device ID, and Zigbee node ID,
+then enable the sensor. Keep the local key in settings. The TH02 Z3-P3Z reports
+whole degrees Celsius on DP 103 and relative humidity on DP 101. These are the
+defaults, with both divisors set to 1. For another sensor, enter its own data
+points, divisors, and temperature unit.
+
+Under **Triggers**, enable the Telegram temperature alert and enter your low
+and high limits in °F. The alert uses the bot and chat configured in **Alerts**.
+The first reading sets the baseline. A later crossing sends one alert for the
+new hot or cold state. Returning to the range lets that same limit alert again.
+
+The listener merges partial reports and retains the most recently received
+value for each measurement in memory. A queried value can be a cached hub
+snapshot, so the timestamp indicates when Solar Miner received it.
+
+Run regression checks with `python3 -m unittest discover -s tests -v`.

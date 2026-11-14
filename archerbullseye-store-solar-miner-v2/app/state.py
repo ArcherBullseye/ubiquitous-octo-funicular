@@ -16,6 +16,7 @@ class AppState:
             "miner_running": None,     # aggregate: True if ANY reachable miner is on
             "miners": {},              # per-miner: {"X1": {running, hashrate_mhs, reachable, error, hold}}
             "ramp": None,              # surplus-tracking ramp plan (control/ramp.py)
+            "home_sensor": None,
             "weather": None,
             "pool": None,
             "btc_price_usd": None,
@@ -49,6 +50,7 @@ class AppState:
         self.control_refresh = threading.Event()
         self.weather_refresh = threading.Event()
         self.pool_refresh = threading.Event()
+        self.home_refresh = threading.Event()
 
     def get(self, key: str, default: Any = None) -> Any:
         with self._lock:
@@ -81,3 +83,4 @@ class AppState:
         self.control_refresh.set()
         self.weather_refresh.set()
         self.pool_refresh.set()
+        self.home_refresh.set()
