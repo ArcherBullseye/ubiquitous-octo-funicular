@@ -72,9 +72,33 @@ or `docker compose up -d`.
 ## Home workspace
 
 Open **Home** from the dashboard to manage Zigbee sensors and smart plugs,
-Wi-Fi Tuya devices, and automation rules. Add a gateway once, then select it
-for each Zigbee child. Each device needs its own Tuya device ID and Zigbee
-node ID. Use the model's verified temperature, humidity, or boolean power DP.
+Wi-Fi Tuya devices, and automation rules. Choose **Discover devices** to:
+
+1. Check the LAN range (for example `192.168.88.0/24`). Broadcast discovery is
+   supplemented by a bounded TCP port 6668 scan for Docker bridge networks.
+2. Enter the User Code from Smart Life / Tuya Smart → Me → Settings → Account
+   and Security. Generate a QR code, scan it with that app, approve access,
+   then choose **I've approved · Load devices**.
+3. Select devices, review hub associations and LAN addresses, and import.
+   Required hubs are included automatically. Existing device settings,
+   identities, and automation references are preserved.
+
+Account sign-in retrieves names, local keys, and Zigbee node IDs. The account
+list also includes devices outside this LAN; review addresses before import.
+LAN discovery cannot enumerate Zigbee children on its own. Missing connection
+details create disabled entries for you to finish in **Configure**. Unknown
+local mappings require manual setup. Only single boolean switch plugs and
+verified temperature/humidity mappings are imported. Discovery/import never
+switch a plug. Sensor reports and controls remain local after import.
+
+Remembering the account is optional. Saved tokens are in `data/tuya-account.json`
+with owner-only permissions (0600); local keys and tokens are never returned
+in the discovery API. Disconnect removes saved account credentials and leaves
+imported devices intact. An account can also be reconnected to load newly
+paired devices. Keep the existing LAN/firewall configuration for the hub.
+
+For manual setup, add a gateway once, then select it for each Zigbee child.
+Each device needs its own Tuya device ID and Zigbee node ID. Use the model's verified temperature, humidity, or boolean power DP.
 The default sensor mapping matches the TH02 Z3-P3Z (103 °C, 101 humidity).
 
 Drag the icon on a device card to reorder cards. Drag condition and action

@@ -233,6 +233,7 @@ async function refresh() {
 async function handleAction(button) {
   const action = button.dataset.action;
   const id = button.dataset.id;
+  if (action === 'discover' || action.startsWith('discovery-')) return discoveryAction(button);
   if (action === 'new-device' || action === 'new-hub') return openDevice(action === 'new-hub' ? 'hub' : 'device');
   if (action === 'edit-device' || action === 'edit-hub') return openDevice(action === 'edit-hub' ? 'hub' : 'device',id);
   if (action === 'close-dialog') { $('device-dialog').close(); home.dialog = null; return; }

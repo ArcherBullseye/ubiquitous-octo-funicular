@@ -28,6 +28,7 @@ from .state import AppState
 from .home.store import init_home_store
 from .home.runtime import HomeService
 from .home.routes import create_home_blueprint
+from .home.discovery import DiscoveryService
 from .web.routes import create_blueprint
 
 
@@ -66,6 +67,6 @@ def create_app():
                       template_folder="web/templates",
                       static_folder="web/static")
     flask_app.register_blueprint(create_blueprint(state, fleet))
-    flask_app.register_blueprint(create_home_blueprint(home, state))
+    flask_app.register_blueprint(create_home_blueprint(home, state, DiscoveryService(home, state)))
     flask_app.extensions["home_service"] = home
     return flask_app, state, fleet, ramp, notifier

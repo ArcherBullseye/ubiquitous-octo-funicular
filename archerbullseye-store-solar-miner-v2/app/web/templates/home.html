@@ -7,6 +7,7 @@
   <link rel="icon" href="/static/img/icon.svg">
   <link rel="stylesheet" href="/static/css/home.css">
   <script defer src="/static/js/home.js"></script>
+  <script defer src="/static/js/home-discovery.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -24,7 +25,7 @@
     <main>
       <div id="notice" role="status" hidden></div>
       <section id="view-devices">
-        <div class="page-heading"><div><h2>Devices</h2><p>Manage your sensors, smart plugs, and local hubs.</p></div><div class="toolbar"><button data-action="new-hub">＋ Add hub</button><button data-action="new-device" class="primary">＋ Add device</button></div></div>
+        <div class="page-heading"><div><h2>Devices</h2><p>Manage your sensors, smart plugs, and local hubs.</p></div><div class="toolbar"><button data-action="discover">⌕ Discover devices</button><button data-action="new-hub">＋ Add hub</button><button data-action="new-device" class="primary">＋ Add device</button></div></div>
         <div class="section-heading"><h3>Devices <small id="connected-count"></small></h3><span class="hint">Drag to arrange · arrow buttons work too</span></div>
         <div id="devices-grid" class="devices-grid"></div>
         <div class="section-heading hubs-heading"><h3>Hubs</h3></div><div id="hubs-list" class="hubs-list"></div>
@@ -42,5 +43,20 @@
     </main>
   </div>
   <dialog id="device-dialog"><form id="device-form"><div class="dialog-heading"><div><span class="eyebrow">DEVICE SETUP</span><h2 id="device-dialog-title">Add device</h2></div><button type="button" data-action="close-dialog" aria-label="Close device setup">×</button></div><div id="device-fields"></div><p id="device-form-error" class="error" role="alert"></p><footer><button type="button" data-action="close-dialog">Cancel</button><button class="primary" type="submit">Keep changes</button></footer></form></dialog>
+  <dialog id="discovery-dialog" aria-labelledby="discovery-title">
+    <div class="dialog-heading"><div><span class="eyebrow">HOME SETUP</span><h2 id="discovery-title">Discover your devices</h2></div><button data-action="discovery-close" aria-label="Close discovery">×</button></div>
+    <p class="dialog-hint">Check your LAN, connect your Tuya account, then choose the hubs, sensors, and plugs to add.</p>
+    <ol class="discovery-steps"><li>1 · Check network</li><li>2 · Connect Tuya</li><li>3 · Import devices</li></ol>
+    <div id="discovery-error" class="error" role="alert"></div>
+    <section class="discovery-section"><h3>Local network</h3><div class="discovery-inline"><label class="field">LAN network<input id="discovery-network" placeholder="192.168.88.0/24" aria-label="LAN network"></label><button data-action="discovery-scan">Scan network</button></div><p id="discovery-lan" class="hint">A scan checks for Tuya broadcasts and devices on port 6668.</p></section>
+    <section class="discovery-section"><h3>Tuya account <span id="discovery-account" class="hint"></span></h3>
+      <div id="discovery-login"><label class="field">User Code<input id="discovery-code" type="password" autocomplete="off" maxlength="128" aria-label="Tuya User Code"></label><p class="hint">In Smart Life or Tuya Smart: Me → Settings → Account and Security → User Code.</p><label class="toggle-label"><input id="discovery-remember" type="checkbox">Remember this account on Solar Miner</label><button data-action="discovery-signin">Get QR code</button></div>
+      <div id="discovery-qr" hidden><img id="discovery-qr-image" alt="Scan with Smart Life or Tuya Smart to authorize Solar Miner"><div><p>Open Smart Life or Tuya Smart, tap +, then Scan. Approve access on your phone.</p><button data-action="discovery-confirm" class="primary">I've approved · Load devices</button><p class="hint">QR codes expire. Get a new code if needed.</p></div></div>
+      <div id="discovery-connected" class="toolbar" hidden><button data-action="discovery-sync">Load account devices</button><button data-action="discovery-disconnect">Disconnect account</button></div>
+      <p class="hint">Account access retrieves device details. Sensors and plug controls continue over your LAN. Disconnecting removes the saved account credentials and keeps imported devices.</p>
+    </section>
+    <section class="discovery-section"><div class="section-heading"><h3>Devices to import</h3><span id="discovery-progress" class="hint" role="status"></span></div><div id="discovery-candidates"><p class="hint">Your account devices will appear here after connecting.</p></div><div id="discovery-warnings" class="hint"></div></section>
+    <footer><span id="discovery-selection" class="hint"></span><button data-action="discovery-import" class="primary" disabled>Import selected</button></footer>
+  </dialog>
 </body>
 </html>

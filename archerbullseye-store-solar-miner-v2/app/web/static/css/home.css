@@ -868,3 +868,33 @@ dialog footer {
   outline: 2px dashed var(--yellow);
   outline-offset: 3px;
 }
+
+#discovery-dialog { width: min(820px, calc(100vw - 28px)); max-width: 820px; }
+.discovery-steps { display:flex; list-style:none; padding:0; gap:8px; color:var(--yellow); font-size:12px; }
+.discovery-steps li { flex:1; padding:12px 8px; border-radius:8px; background:var(--raised); }
+.discovery-section { border-top:1px solid var(--line); padding:16px 0; }
+.discovery-section h3 { margin:0 0 12px; }
+.discovery-inline { display:flex; gap:12px; align-items:end; }
+.discovery-inline .field { flex:1; margin:0; }
+.discovery-inline button { margin-bottom:1px; }
+#discovery-login > button { margin-top:14px; }
+#discovery-qr { display:flex; gap:20px; align-items:center; margin-top:18px; }
+#discovery-qr[hidden], #discovery-connected[hidden], #discovery-login[hidden] { display:none; }
+#discovery-qr img { width:176px; height:176px; background:white; border:8px solid white; border-radius:8px; }
+.discovery-candidate { padding:14px; margin:8px 0; border:1px solid var(--line); border-radius:10px; background:var(--raised); }
+.discovery-candidate > label { display:flex; gap:12px; align-items:center; cursor:pointer; }
+.discovery-candidate strong { display:block; }
+.discovery-candidate small { display:block; color:var(--muted); margin-top:5px; line-height:1.5; }
+.discovery-candidate .field { margin:12px 0 0 28px; }
+.discovery-candidate input[type=checkbox] { accent-color:var(--yellow); }
+.discovery-candidate .existing { color:var(--green); }
+#discovery-error:not(:empty) { padding:12px 0; }
+#discovery-dialog footer { display:flex; gap:12px; align-items:center; justify-content:space-between; position:sticky; bottom:-24px; background:var(--panel); padding:18px 0 0; }
+@media(max-width:600px) {
+  .discovery-inline { flex-wrap:wrap; }
+  .discovery-inline .field { flex-basis:100%; }
+  #discovery-qr { flex-direction:column; align-items:start; }
+  .page-heading .toolbar { flex-wrap:wrap; }
+  .discovery-steps { font-size:10px; }
+  #discovery-dialog footer { bottom:-18px; }
+}

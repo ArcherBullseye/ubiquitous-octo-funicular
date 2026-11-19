@@ -3,3 +3,5 @@ requests
 python-dotenv
 tinytuya
 tzdata
+tuya-device-sharing-sdk==0.2.15
+qrcode==8.2

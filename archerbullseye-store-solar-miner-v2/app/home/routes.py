@@ -7,7 +7,7 @@ from .schema import number, public_document
 from .store import ConflictError, load_document, recent_events, save_document, set_manual_hold
 
 
-def create_home_blueprint(service, state):
+def create_home_blueprint(service, state, discovery=None):
     bp = Blueprint('home', __name__)
 
     @bp.get('/home')
@@ -64,5 +64,36 @@ def create_home_blueprint(service, state):
                  'updated_at': {key: state.get('last_updated') for key in readings}}
         result = matching(rule, service.snapshot(), solar, doc.get('timezone', 'America/Detroit'), time.time())
         return jsonify(result=result)
+
+    @bp.get('/api/home/discovery')
+    def discovery_status():
+        return jsonify(discovery.snapshot())
+
+    @bp.post('/api/home/discovery/<operation>')
+    def discovery_action(operation):
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify(error='Expected a discovery request object.'), 400
+        try:
+            if operation == 'scan':
+                discovery.scan(data.get('network', ''))
+            elif operation == 'signin':
+                discovery.signin(data.get('user_code', ''), data.get('remember', False))
+            elif operation == 'confirm':
+                discovery.confirm()
+            elif operation == 'sync':
+                discovery.sync()
+            elif operation == 'disconnect':
+                discovery.disconnect()
+            elif operation == 'import':
+                doc, count, disabled = discovery.import_devices(data)
+                return jsonify(document=public_document(doc), imported=count, disabled=disabled)
+            else:
+                return jsonify(error='Discovery operation not found.'), 404
+        except ConflictError as exc:
+            return jsonify(error=str(exc)), 409
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        return jsonify(discovery.snapshot()), 202
 
     return bp
