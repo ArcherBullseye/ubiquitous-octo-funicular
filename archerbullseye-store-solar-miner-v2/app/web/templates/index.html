@@ -21,6 +21,7 @@
       <div class="status-dot" id="status-dot" title="Refresh now" onclick="manualRefresh()"></div>
       <span id="last-updated">Loading…</span>
     </div>
+    <a class="btn-settings" href="/home">⌂ Home</a>
     <button class="btn-settings" onclick="openSettings()">⚙ Settings</button>
   </div>
 </header>
@@ -137,13 +138,13 @@
       <div class="card stat-card acc-teal home-card">
         <div class="home-card-head">
           <div class="card-label">⌂ Home Assistant</div>
-          <button type="button" class="btn-settings home-settings-button" aria-label="Home settings" title="Home settings" onclick="openSettings('home')">⚙</button>
+          <button type="button" class="btn-settings home-settings-button" aria-label="Home settings" title="Home settings" onclick="location.href='/home'">⚙</button>
         </div>
         <table class="home-readings" aria-label="Home sensor readings">
           <thead>
             <tr><th scope="col">Name</th><th scope="col">Temp</th><th scope="col">Humidity</th></tr>
           </thead>
-          <tbody>
+          <tbody id="home-device-rows">
             <tr>
               <th scope="row" id="home-name">Temperature &amp; humidity</th>
               <td class="num" id="home-temperature">—</td>
@@ -504,35 +505,9 @@
 
         <!-- Dehumidifier -->
         <div class="settings-panel" id="panel-home">
-          <div class="panel-title">Home Assistant</div>
-          <fieldset class="home-settings-section">
-            <legend>Triggers</legend>
-            <div class="home-trigger-toggle">
-              <input type="checkbox" id="s-home_temperature_alert_enabled">
-              <label for="s-home_temperature_alert_enabled">Send a Telegram alert when temperature leaves this range</label>
-            </div>
-            <div class="form-group-row">
-              <div class="form-group"><label for="s-home_temperature_alert_low_f">Below (°F)</label><input type="number" id="s-home_temperature_alert_low_f" step="0.1"></div>
-              <div class="form-group"><label for="s-home_temperature_alert_high_f">Above (°F)</label><input type="number" id="s-home_temperature_alert_high_f" step="0.1"></div>
-            </div>
-            <div class="form-hint">Alerts use the Telegram bot and chat in Alerts. The first reading sets the baseline, then alerts fire when the reading crosses a limit.</div>
-          </fieldset>
-          <details class="home-settings-section">
-            <summary>Hub &amp; sensor setup</summary>
-            <div class="form-hint">Read the paired sensor through the G08Pro on your LAN.</div>
-            <div class="home-trigger-toggle"><input type="checkbox" id="s-home_hub_enabled"><label for="s-home_hub_enabled">Enable local sensor</label></div>
-            <div class="form-group"><label for="s-home_sensor_name">Sensor name</label><input type="text" id="s-home_sensor_name"></div>
-            <div class="form-group"><label for="s-home_hub_ip">Hub IP address</label><input type="text" id="s-home_hub_ip"></div>
-            <div class="form-group"><label for="s-home_hub_id">Hub device ID</label><input type="text" id="s-home_hub_id"></div>
-            <div class="form-group"><label for="s-home_hub_key">Hub local key</label><input type="password" id="s-home_hub_key" autocomplete="new-password"></div>
-            <div class="form-group"><label for="s-home_sensor_id">Sensor device ID</label><input type="text" id="s-home_sensor_id"></div>
-            <div class="form-group"><label for="s-home_sensor_node">Zigbee node ID</label><input type="text" id="s-home_sensor_node"></div>
-            <div class="form-group"><label for="s-home_temperature_dp">Temperature data point</label><input type="text" id="s-home_temperature_dp"></div>
-            <div class="form-group"><label for="s-home_temperature_divisor">Temperature divisor (10 for tenths)</label><input type="number" id="s-home_temperature_divisor" min="0.01" step="0.01"></div>
-            <div class="form-group"><label for="s-home_humidity_dp">Humidity data point</label><input type="text" id="s-home_humidity_dp"></div>
-            <div class="form-group"><label for="s-home_humidity_divisor">Humidity divisor</label><input type="number" id="s-home_humidity_divisor" min="0.01" step="0.01"></div>
-            <div class="form-group"><label for="s-home_temperature_unit">Sensor temperature unit</label><select id="s-home_temperature_unit"><option value="C">Celsius</option><option value="F">Fahrenheit</option></select></div>
-          </details>
+          <div class="panel-title">Home workspace</div>
+          <p class="form-hint">Manage hubs, sensors, plugs, and automation rules in the Home workspace.</p>
+          <a class="btn-settings" href="/home">Open Home workspace →</a>
         </div>
         <div class="settings-panel" id="panel-dehum">
           <div class="panel-title">Dehumidifier (Tuya Local)</div>

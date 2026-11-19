@@ -69,28 +69,38 @@ python run.py            # http://localhost:3000
 or `docker compose up -d`.
 
 
-## Local Home sensor card
+## Home workspace
 
-The Home Assistant card beside Smart Start reads a Zigbee temperature and
-humidity sensor through a Tuya 3.4 gateway over the LAN. The row shows the
-sensor name, temperature in °F, humidity, and a freshness dot. Green means both
-values arrived within 30 minutes, amber means a value is stale or missing, and
-gray means no values have arrived.
+Open **Home** from the dashboard to manage Zigbee sensors and smart plugs,
+Wi-Fi Tuya devices, and automation rules. Add a gateway once, then select it
+for each Zigbee child. Each device needs its own Tuya device ID and Zigbee
+node ID. Use the model's verified temperature, humidity, or boolean power DP.
+The default sensor mapping matches the TH02 Z3-P3Z (103 °C, 101 humidity).
 
-Open the gear on the Home card and expand **Hub & sensor setup**. Enter the
-hub IP address, hub device ID, local key, sensor device ID, and Zigbee node ID,
-then enable the sensor. Keep the local key in settings. The TH02 Z3-P3Z reports
-whole degrees Celsius on DP 103 and relative humidity on DP 101. These are the
-defaults, with both divisors set to 1. For another sensor, enter its own data
-points, divisors, and temperature unit.
+Drag the icon on a device card to reorder cards. Drag condition and action
+blocks into the rule builder, or click blocks and use their arrow controls.
+Rules support all/any conditions, numeric thresholds, plug state, local time
+windows, hold duration, and cooldown. Actions can request plug ON/OFF or send
+Telegram messages through the existing bot. **Save workspace** applies changes.
+Each rule establishes a fresh baseline after startup, reconnecting, or editing.
+A later crossing runs the actions. Missing or stale readings pause evaluation.
+Actions are queued in their displayed order. Device confirmations appear in
+Activity, and a failed action is logged while remaining actions still run.
 
-Under **Triggers**, enable the Telegram temperature alert and enter your low
-and high limits in °F. The alert uses the bot and chat configured in **Alerts**.
-The first reading sets the baseline. A later crossing sends one alert for the
-new hot or cold state. Returning to the range lets that same limit alert again.
+Manual plug commands create a 15-minute automation hold, retained across app
+restarts. **Resume rules** clears the hold. Conditions must cross again to
+trigger a rule after a skipped action. Time windows use the workspace timezone
+(default America/Detroit) and include daylight saving changes.
 
-The listener merges partial reports and retains the most recently received
-value for each measurement in memory. A queried value can be a cached hub
-snapshot, so the timestamp indicates when Solar Miner received it.
+The first startup migrates the v2.0.8 sensor, hub, and enabled range alerts into
+the workspace. Migration runs once. Thereafter, edit Home configuration in the
+workspace. Settings are stored transactionally with a revision check, so two
+windows cannot silently overwrite each other's edits. Local keys are masked
+in API responses. Each gateway has one socket-owning worker for all its
+children, and plug commands are serialized through that worker.
+
+Freshness timestamps indicate when a report was received, including cached hub
+snapshots. Readings remain in memory until restart. The dashboard summary lists
+all sensors, and the workspace contains each plug's manual controls.
 
 Run regression checks with `python3 -m unittest discover -s tests -v`.

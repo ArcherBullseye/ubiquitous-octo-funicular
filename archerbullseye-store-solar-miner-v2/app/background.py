@@ -2,9 +2,7 @@
 import threading
 from typing import Optional
 
-from .clients.zigbee import ZigbeeListener
 from .clients.openmeteo import geocode, get_weather, parse_weather
-from .control.home_triggers import TemperatureTrigger
 from .control.loop import ControlLoop
 from .control.notifications import Notifier
 from .control.ramp import RampController
@@ -86,10 +84,8 @@ def pool_loop(state: AppState) -> None:
 
 
 def start_background_threads(state: AppState, fleet: MinerFleet,
-                             ramp: RampController, notifier: Notifier) -> None:
+                             ramp: RampController, notifier: Notifier, home) -> None:
     control = ControlLoop(state, fleet, ramp, notifier)
-    temperature_trigger = TemperatureTrigger()
-    home = ZigbeeListener(state, get_settings, temperature_trigger.observe)
     threads = [
         threading.Thread(target=home.run_forever, daemon=True, name="home-sensor-loop"),
         threading.Thread(target=control.run_forever, daemon=True, name="control-loop"),

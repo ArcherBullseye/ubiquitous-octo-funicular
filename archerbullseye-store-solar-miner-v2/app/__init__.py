@@ -25,6 +25,9 @@ from .control.ramp import RampController
 from .db import get_settings, init_db, update_settings
 from .devices.miner import MinerFleet
 from .state import AppState
+from .home.store import init_home_store
+from .home.runtime import HomeService
+from .home.routes import create_home_blueprint
 from .web.routes import create_blueprint
 
 
@@ -52,7 +55,9 @@ def create_app():
     init_db()
     _seed_settings_from_env()
 
+    init_home_store()
     state = AppState()
+    home = HomeService(state)
     fleet = MinerFleet()
     ramp = RampController(fleet)
     notifier = Notifier(state)
@@ -61,4 +66,6 @@ def create_app():
                       template_folder="web/templates",
                       static_folder="web/static")
     flask_app.register_blueprint(create_blueprint(state, fleet))
+    flask_app.register_blueprint(create_home_blueprint(home, state))
+    flask_app.extensions["home_service"] = home
     return flask_app, state, fleet, ramp, notifier

@@ -4,7 +4,7 @@ name: Solar Miner v2
 tagline: Solar-surplus-driven Bitcoin mining and load control
 icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
 category: bitcoin
-version: "2.0.8"
+version: "2.1.0"
 port: 3002
 description: >-
   Monitor your Solis solar inverter and automatically control your LuxOS
@@ -34,6 +34,15 @@ support: https://github.com/ArcherBullseye/solarv2/issues
 gallery:
   - https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
 releaseNotes: >-
+  v2.1.0: Open the new Home workspace from the dashboard to manage
+  multiple temperature sensors and smart plugs. Drag device cards to
+  arrange them, and build automation rules from temperature, humidity,
+  plug state, solar readings, and time windows. Actions can switch plugs
+  or send Telegram messages. Includes manual controls, automation holds,
+  cooldowns, and an activity log. Existing Home sensor settings and
+  temperature alerts migrate automatically on first startup.
+
+
   v2.0.8: A Home card beside Smart Start shows temperature and humidity
   from a paired Zigbee sensor through a local Tuya gateway. Each reading
   row shows the last report status. Open the Home card settings to connect

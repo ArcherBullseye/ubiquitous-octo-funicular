@@ -289,6 +289,7 @@ async function refresh() {
     if (!resp.ok) return;
     const s = await resp.json();
     updateHomeSensor(s.home_sensor);
+    updateAdditionalSensors(s.home_devices);
 
     el('status-dot').classList.toggle('fresh', isFresh(s.last_updated));
     el('last-updated').textContent = 'Updated ' + timeSince(s.last_updated);
@@ -1043,4 +1044,41 @@ function updateHomeSensor(sensor) {
   el('home-status').className = 'badge badge-' + color;
   const stamps = Object.values(times).filter(Boolean).sort();
   el('home-updated').textContent = s.error || (stamps.length ? 'Received ' + timeSince(stamps[0]) : 'Waiting for sensor report');
+}
+
+
+function updateAdditionalSensors(devices) {
+  const body = el('home-device-rows');
+  body.querySelectorAll('[data-extra-sensor]').forEach(row => row.remove());
+  const sensors = Object.values(devices || {}).filter(d => d.kind === 'sensor');
+  for (const sensor of sensors.slice(1)) {
+    const row = document.createElement('tr');
+    row.dataset.extraSensor = 'true';
+    const name = document.createElement('th');
+    name.scope = 'row';
+    name.textContent = sensor.name;
+    name.title = sensor.name;
+    const temp = document.createElement('td');
+    temp.className = 'num';
+    temp.textContent = sensor.temperature_f == null ? '—' : sensor.temperature_f.toFixed(1) + '°F';
+    const humidity = document.createElement('td');
+    const line = document.createElement('span');
+    line.className = 'home-humidity-reading';
+    const value = document.createElement('span');
+    value.textContent = sensor.humidity_pct == null ? '—' : sensor.humidity_pct.toFixed(0) + '%';
+    const dot = document.createElement('span');
+    dot.className = 'home-freshness';
+    dot.setAttribute('role', 'img');
+    const stamps = ['temperature_f', 'humidity_pct'].map(key => Date.parse(sensor.updated_at?.[key]));
+    const fresh = stamps.every(t => Number.isFinite(t) && Date.now() - t < 1800000);
+    dot.dataset.state = !stamps.some(Number.isFinite) ? 'none' : fresh ? 'fresh' : 'stale';
+    const description = 'Temperature: ' + timeSince(sensor.updated_at?.temperature_f) +
+      '. Humidity: ' + timeSince(sensor.updated_at?.humidity_pct) + '.';
+    dot.title = description;
+    dot.setAttribute('aria-label', description);
+    line.append(value, dot);
+    humidity.append(line);
+    row.append(name, temp, humidity);
+    body.append(row);
+  }
 }

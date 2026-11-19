@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Home · Solar Miner</title>
+  <link rel="icon" href="/static/img/icon.svg">
+  <link rel="stylesheet" href="/static/css/home.css">
+  <script defer src="/static/js/home.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">☀ <span>Solar Miner</span><small>/ Home</small></a>
+    <div class="save-area"><span id="save-state">Loading…</span><button id="save-workspace" class="primary" disabled>Save workspace</button></div>
+  </header>
+  <div class="app-shell">
+    <nav class="sidebar" aria-label="Home navigation">
+      <div class="workspace-mark">⌂</div><h1>Home</h1><p>Devices & automations</p>
+      <button class="nav-item active" data-view="devices">▦ <span>Devices</span><b id="device-count">0</b></button>
+      <button class="nav-item" data-view="automations">⑂ <span>Automations</span><b id="rule-count">0</b></button>
+      <button class="nav-item" data-view="activity">◷ <span>Activity</span></button>
+      <div class="sidebar-bottom"><span class="connection-dot"></span> Local connections<a href="/">← Back to dashboard</a></div>
+    </nav>
+    <main>
+      <div id="notice" role="status" hidden></div>
+      <section id="view-devices">
+        <div class="page-heading"><div><h2>Devices</h2><p>Manage your sensors, smart plugs, and local hubs.</p></div><div class="toolbar"><button data-action="new-hub">＋ Add hub</button><button data-action="new-device" class="primary">＋ Add device</button></div></div>
+        <div class="section-heading"><h3>Devices <small id="connected-count"></small></h3><span class="hint">Drag to arrange · arrow buttons work too</span></div>
+        <div id="devices-grid" class="devices-grid"></div>
+        <div class="section-heading hubs-heading"><h3>Hubs</h3></div><div id="hubs-list" class="hubs-list"></div>
+      </section>
+      <section id="view-automations" hidden>
+        <div class="page-heading"><div><h2>Automations</h2><p>Connect readings and conditions to the actions you want.</p></div><button data-action="new-rule" class="primary">＋ New automation</button></div>
+        <div class="automation-layout"><aside class="rule-list-panel"><h3>Your automations</h3><div id="rules-list"></div></aside>
+          <div id="rule-editor" class="rule-editor"></div>
+        </div>
+      </section>
+      <section id="view-activity" hidden>
+        <div class="page-heading"><div><h2>Home activity</h2><p>Rule crossings, queued actions, confirmations, and connection errors.</p></div><button data-action="refresh">↻ Refresh</button></div>
+        <div id="activity-list" class="activity-list"></div>
+      </section>
+    </main>
+  </div>
+  <dialog id="device-dialog"><form id="device-form"><div class="dialog-heading"><div><span class="eyebrow">DEVICE SETUP</span><h2 id="device-dialog-title">Add device</h2></div><button type="button" data-action="close-dialog" aria-label="Close device setup">×</button></div><div id="device-fields"></div><p id="device-form-error" class="error" role="alert"></p><footer><button type="button" data-action="close-dialog">Cancel</button><button class="primary" type="submit">Keep changes</button></footer></form></dialog>
+</body>
+</html>
