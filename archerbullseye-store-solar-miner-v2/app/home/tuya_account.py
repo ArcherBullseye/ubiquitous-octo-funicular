@@ -7,9 +7,13 @@ import re
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 CLIENT_ID = 'HA_3y9q4ak7g4ephrvke'
 SCHEMA = 'haauthorize'
+# QR authorization uses iotbing.com; its response selects the account's regional
+# Tuya API server. Keep these ownership boundaries when accepting that response.
+ACCOUNT_DOMAINS = ('iotbing.com', 'tuyaus.com', 'tuyaeu.com', 'tuyacn.com', 'tuyain.com')
 
 
 class AccountError(ValueError):
@@ -85,6 +89,26 @@ def begin_signin(user_code):
     return {'user_code': user_code, 'qrcode': token}, image_url
 
 
+def normalize_endpoint(endpoint):
+    """Accept Tuya regional HTTPS origins and normalize the SDK's URL prefix."""
+    message = 'Tuya returned an unrecognized account server. Update Solar Miner or contact support.'
+    if not isinstance(endpoint, str) or not endpoint or any(c.isspace() for c in endpoint):
+        raise AccountError(message)
+    try:
+        parsed = urlparse(endpoint)
+        host = parsed.hostname or ''
+        trusted = any(host.endswith('.' + domain) for domain in ACCOUNT_DOMAINS)
+        if (parsed.scheme != 'https' or not trusted or parsed.port not in (None, 443)
+                or parsed.username is not None or parsed.password is not None
+                or parsed.path not in ('', '/') or parsed.params or parsed.query or parsed.fragment):
+            raise ValueError('Invalid origin')
+    except ValueError:
+        raise AccountError(message) from None
+    # The SDK appends paths beginning with '/'. A returned trailing slash must
+    # not produce double slashes in every account/device request.
+    return 'https://' + host
+
+
 def confirm_signin(pending):
     LoginControl, _ = sdk()
     login = LoginControl()
@@ -95,24 +119,21 @@ def confirm_signin(pending):
         login.session.close()
     if not success:
         raise AccountError('The sign-in has not been approved. Scan the QR code, confirm in the app, then check again. If it expired, request a new code.')
-    endpoint = info.get('endpoint', '')
-    from urllib.parse import urlparse
-    parsed = urlparse(endpoint)
-    if parsed.scheme != 'https' or not parsed.hostname or not parsed.hostname.endswith('.iotbing.com'):
-        raise AccountError('Tuya returned an unsupported account endpoint. Request a new QR code.')
+    endpoint = normalize_endpoint(info.get('endpoint'))
     return {'user_code': pending['user_code'], 'terminal_id': info['terminal_id'],
             'endpoint': endpoint, 'token_info': {key: info[key] for key in
             ('t', 'uid', 'expire_time', 'access_token', 'refresh_token')}}
 
 
 def fetch_devices(account, on_token):
+    endpoint = normalize_endpoint(account.get('endpoint'))
     _, Manager = sdk()
     class TokenListener:
         def update_token(self, token_info):
             account['token_info'] = token_info
             on_token(account)
     manager = Manager(CLIENT_ID, account['user_code'], account['terminal_id'],
-                      account['endpoint'], account['token_info'], TokenListener())
+                      endpoint, account['token_info'], TokenListener())
     bounded_session(manager.customer_api.session)
     devices = []
     warnings = []

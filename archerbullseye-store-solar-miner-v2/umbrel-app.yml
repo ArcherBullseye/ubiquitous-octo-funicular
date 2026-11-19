@@ -4,7 +4,7 @@ name: Solar Miner v2
 tagline: Solar-surplus-driven Bitcoin mining and load control
 icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
 category: bitcoin
-version: "2.1.1"
+version: "2.1.2"
 port: 3002
 description: >-
   Monitor your Solis solar inverter and automatically control your LuxOS
@@ -34,6 +34,12 @@ support: https://github.com/ArcherBullseye/solarv2/issues
 gallery:
   - https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
 releaseNotes: >-
+  v2.1.2: Fixed Tuya QR sign-in rejecting valid regional account servers
+  with an unsupported endpoint error. Home now accepts Tuya's regional
+  HTTPS addresses and normalizes trailing slashes before loading devices.
+  Update, request a fresh QR code, and approve it in Smart Life or Tuya Smart.
+
+
   v2.1.1: Home can now discover Tuya devices on your LAN and import the
   devices paired to your Smart Life or Tuya Smart account. Use Discover
   devices to scan the network, sign in with a QR code, and review hubs,
