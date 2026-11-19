@@ -4,6 +4,8 @@ import time
 from flask import Blueprint, jsonify, render_template, request
 
 from .schema import number, public_document
+from .metrics import SOURCES, DEVICE_METRICS, dashboard_readings
+from ..db import get_settings
 from .store import ConflictError, load_document, recent_events, save_document, set_manual_hold
 
 
@@ -17,7 +19,8 @@ def create_home_blueprint(service, state, discovery=None):
     @bp.get('/api/home')
     def get_home():
         return jsonify(document=public_document(load_document()), devices=service.snapshot(),
-                       events=recent_events())
+                       events=recent_events(), condition_sources=SOURCES, device_metrics=DEVICE_METRICS,
+                       dashboard=dashboard_readings(state.snapshot(), get_settings()))
 
     @bp.post('/api/home')
     def save_home():
@@ -59,10 +62,9 @@ def create_home_blueprint(service, state, discovery=None):
         rule = next((r for r in doc['rules'] if r['id'] == rule_id), None)
         if not rule:
             return jsonify(error='Save this automation first.'), 404
-        readings = state.get('readings') or {}
-        solar = {'status': 'connected', **readings,
-                 'updated_at': {key: state.get('last_updated') for key in readings}}
-        result = matching(rule, service.snapshot(), solar, doc.get('timezone', 'America/Detroit'), time.time())
+        dashboard = dashboard_readings(state.snapshot(), get_settings())
+        result = matching(rule, service.snapshot(), dashboard['solar'],
+                          doc.get('timezone', 'America/Detroit'), time.time(), dashboard)
         return jsonify(result=result)
 
     @bp.get('/api/home/discovery')

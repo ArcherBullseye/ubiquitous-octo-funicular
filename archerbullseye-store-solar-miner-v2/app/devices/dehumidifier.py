@@ -8,6 +8,7 @@ import time
 from typing import Dict, Optional
 
 from ..clients.tuya import DehumidifierClient
+from ..localtime import utcnow_str
 from .base import SwitchableLoad
 
 
@@ -103,6 +104,7 @@ def run_auto_control(dehum: Dehumidifier, settings: dict, state, readings: Optio
                 auto_on = True
 
         state.update({
+            "dehum_last_updated": utcnow_str(),
             "dehum_power": power,
             "dehum_humidity": status["humidity"],
             "dehum_tank_full": tank_full,

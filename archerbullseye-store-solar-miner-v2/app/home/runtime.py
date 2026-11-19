@@ -10,6 +10,7 @@ from ..clients.zigbee import data_points, decode_readings
 from ..control.notifications import get_bot
 from ..db import get_settings
 from .engine import RuleEngine
+from .metrics import dashboard_readings
 from .store import load_document, log_event, manual_holds, set_manual_hold
 
 
@@ -266,11 +267,9 @@ class HomeService:
                         self.add_worker(device, [device])
                 self.publish()
         readings = self.snapshot()
-        solar_readings = self.state.get('readings') or {}
-        ts = self.state.get('last_updated')
-        solar = {'status': 'connected', **solar_readings,
-                 'updated_at': {key: ts for key in solar_readings}}
-        self.engine.tick(doc, readings, solar, doc.get('timezone', 'America/Detroit'), self.action, log_event)
+        dashboard = dashboard_readings(self.state.snapshot(), get_settings())
+        self.engine.tick(doc, readings, dashboard['solar'], doc.get('timezone', 'America/Detroit'),
+                         self.action, log_event, dashboard=dashboard)
 
     def add_worker(self, connection, devices):
         worker = ConnectionWorker(self, connection, devices, self.document['revision'])

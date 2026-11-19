@@ -64,7 +64,7 @@ def pool_loop(state: AppState) -> None:
         try:
             price = _fetch_btc_price()
             if price:
-                state.set("btc_price_usd", price)
+                state.update({"btc_price_usd": price, "btc_price_last_updated": utcnow_str()})
 
             settings = get_settings()
             api_key = settings.get("lux_pool_api_key", "")

@@ -898,3 +898,9 @@ dialog footer {
   .discovery-steps { font-size:10px; }
   #discovery-dialog footer { bottom:-18px; }
 }
+
+.condition-wrap { margin:10px 0; }
+.condition-wrap .rule-block { margin-bottom:0; }
+.condition-reading { padding:8px 12px; font-size:12px; line-height:1.5; background:#101820; border:1px solid var(--line); border-top:0; border-radius:0 0 8px 8px; }
+.live-value { color:var(--green); }
+.metric-help { display:block; color:var(--muted); margin-top:3px; }

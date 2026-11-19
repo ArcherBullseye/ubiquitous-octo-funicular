@@ -1,6 +1,6 @@
 /* Home workspace: saved device configuration and a drag-and-drop rule builder. */
 'use strict';
-const home = {document: null, readings: {}, events: [], view: 'devices', selected: null, dirty: false, drag: null, dialog: null};
+const home = {document: null, readings: {}, events: [], view: 'devices', selected: null, dirty: false, drag: null, dialog: null, sources: {}, deviceMetrics: {}, dashboard: {}};
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function uid(prefix) {
@@ -143,41 +143,80 @@ function renderDeviceForm() {
   if (home.dialog.existing) fields += `<button type="button" class="danger" data-action="delete-dialog-item">Remove ${hub ? 'hub' : 'device'}</button>`;
   $('device-fields').innerHTML = fields;
 }
-function metricOptions(source) {
-  if (source === 'solar') return [['soc','Battery SOC (%)'],['input_power_w','Solar production (W)'],['grid_power_w','Grid export (W)']];
-  if (source === 'clock') return [['time','Local time window']];
+function metricDefinitions(source) {
   const device = home.document.devices.find(d => d.id === source);
-  return device?.kind === 'plug' ? [['power','Power state']] : [['temperature_f','Temperature (°F)'],['humidity_pct','Humidity (%)']];
+  return device ? home.deviceMetrics[device.kind] || {} : home.sources[source]?.metrics || {};
+}
+function metricDefinition(source, metric) { return metricDefinitions(source)[metric] || {kind:'number',default:0}; }
+function metricOptions(source) {
+  return Object.entries(metricDefinitions(source)).map(([id,definition]) => [id,definition.label]);
+}
+function defaultCondition(source, metric, operator) {
+  const definition = metricDefinition(source,metric);
+  return {id:uid('condition'),source,metric,operator:operator || (definition.kind === 'time' ? 'between' : definition.kind === 'boolean' ? 'is_on' : 'below'),
+    value:definition.kind === 'time' ? '08:00' : definition.default || 0,end:definition.kind === 'time' ? '18:00' : (definition.default || 0)+10};
 }
 function newCondition(kind = 'temperature') {
   const sensor = home.document.devices.find(d => d.kind === 'sensor');
   const plug = home.document.devices.find(d => d.kind === 'plug');
   if (kind === 'power' && !plug) { notice('Add a smart plug first.',true); return null; }
   if ((kind === 'temperature' || kind === 'humidity') && !sensor) { notice('Add a sensor first.',true); return null; }
-  const source = kind === 'time' ? 'clock' : kind === 'solar' ? 'solar' : kind === 'power' ? plug.id : sensor.id;
-  const metric = {time:'time',solar:'soc',power:'power',temperature:'temperature_f',humidity:'humidity_pct'}[kind];
-  return {id:uid('condition'),source,metric,operator:kind === 'time' ? 'between' : kind === 'power' ? 'is_on' : 'below',value:kind === 'time' ? '08:00' : kind === 'humidity' ? 60 : kind === 'solar' ? 85 : 40,end:'18:00'};
+  const choices = {time:['clock','time'],soc:['solar','soc','at_least'],excess:['solar','excess_power_w','at_least'],
+    solar:['solar','input_power_w'],dashboard:['dashboard:weather','current_temp_f'],
+    power:[plug?.id,'power'],temperature:[sensor?.id,'temperature_f'],humidity:[sensor?.id,'humidity_pct']};
+  return defaultCondition(...choices[kind]);
 }
 function newAction(kind) {
-  if (kind === 'plug') {
+  if (kind === 'plug' || kind === 'plug-on' || kind === 'plug-off') {
     const plug = home.document.devices.find(d => d.kind === 'plug');
     if (!plug) { notice('Add a smart plug first.',true); return null; }
-    return {id:uid('action'),type:'plug',device_id:plug.id,on:true};
+    return {id:uid('action'),type:'plug',device_id:plug.id,on:kind !== 'plug-off'};
   }
   return {id:uid('action'),type:'telegram',message:'Home automation conditions matched.'};
+}
+function solarPlugPair() {
+  const plug = home.document.devices.find(d => d.kind === 'plug');
+  if (!plug) { notice('Add or import a smart plug first.',true); return; }
+  const make = (on, match, soc, watts, seconds) => ({id:uid('rule'),name:`${plug.name} · solar ${on ? 'ON' : 'OFF'}`,enabled:false,
+    match,for_seconds:seconds,cooldown_seconds:60,
+    conditions:[{...defaultCondition('solar','soc',on ? 'at_least' : 'at_most'),value:soc},
+      {...defaultCondition('solar','excess_power_w',on ? 'at_least' : 'at_most'),value:watts}],
+    actions:[{id:uid('action'),type:'plug',device_id:plug.id,on}]});
+  const on = make(true,'all',95,1000,60), off = make(false,'any',90,0,30);
+  home.document.rules.push(on,off); home.selected=on.id; changed(); showView('automations');
+  notice('Created two paused rules. Choose the plug and thresholds in both, then enable and save them.');
+}
+function liveCondition(c) {
+  if (c.source === 'clock') return `Uses ${esc(home.document.timezone || 'America/Detroit')}`;
+  const definition = metricDefinition(c.source,c.metric);
+  const row = home.dashboard[c.source] || home.readings[c.source] || {};
+  const value = row[c.metric], date = Date.parse(row.updated_at?.[c.metric]);
+  const fresh = row.status === 'connected' && Number.isFinite(date) && Date.now() >= date && Date.now()-date <= (row.max_age_seconds || 1800)*1000;
+  const label = value == null ? 'Waiting for a reading' : typeof value === 'boolean' ? (value ? 'True / ON' : 'False / OFF') : `${Number(value).toLocaleString(undefined,{maximumFractionDigits:2})} ${definition.unit || ''}`;
+  return `<span class="${fresh ? 'live-value' : 'hint'}">${esc(label)}${value != null && !fresh ? ' · stale / unavailable' : ''}</span>${definition.help ? `<span class="metric-help">${esc(definition.help)}</span>` : ''}`;
+}
+function updateConditionReadings() {
+  if (home.view !== 'automations') return;
+  for (const c of selectedRule()?.conditions || []) {
+    const node = document.querySelector(`[data-condition-reading="${CSS.escape(c.id)}"]`);
+    if (node) node.innerHTML=liveCondition(c);
+  }
 }
 function blockControls(id, kind, index, length) {
   return `<div class="block-controls"><span class="grip" data-handle="true" title="Drag to reorder" aria-hidden="true">⠿</span><button data-action="move-block" data-id="${id}" data-kind="${kind}" data-direction="-1" ${index===0 ? 'disabled' : ''} aria-label="Move block earlier">↑</button><button data-action="move-block" data-id="${id}" data-kind="${kind}" data-direction="1" ${index===length-1 ? 'disabled' : ''} aria-label="Move block later">↓</button><button data-action="remove-block" data-id="${id}" data-kind="${kind}" aria-label="Remove block">×</button></div>`;
 }
 function conditionBlock(c, index, length) {
-  const sources = [...home.document.devices.map(d => [d.id,d.name]),['solar','Solar system'],['clock','Clock']];
-  const ops = c.metric === 'power' ? [['is_on','Is ON'],['is_off','Is OFF']] : c.metric === 'time' ? [['between','Between']] : [['below','Falls below'],['above','Rises above']];
+  const sources = [...home.document.devices.map(d => [d.id,d.name]),...Object.entries(home.sources).map(([id,source]) => [id,source.label])];
+  const definition = metricDefinition(c.source,c.metric), kind = definition.kind;
+  const ops = kind === 'boolean' ? [['is_on','Is true / ON'],['is_off','Is false / OFF']] : kind === 'time' ? [['between','Between']] :
+    [['below','Below (<)'],['above','Above (>)'],['at_most','At most (≤)'],['at_least','At least (≥)'],['equals','Equals (=)'],['between','Between (inclusive)'],['outside','Outside range']];
   const attrs = `data-block="${esc(c.id)}" data-kind="conditions"`;
-  return `<div class="rule-block" data-drag="conditions" data-id="${esc(c.id)}">${blockControls(c.id,'conditions',index,length)}<select aria-label="Condition device" ${attrs} data-key="source">${options(sources,c.source)}</select><select aria-label="Reading" ${attrs} data-key="metric">${options(metricOptions(c.source),c.metric)}</select><select aria-label="Comparison" ${attrs} data-key="operator">${options(ops,c.operator)}</select>${c.metric !== 'power' ? `<input aria-label="${c.metric === 'time' ? 'Start time' : 'Threshold'}" ${attrs} data-key="value" type="${c.metric === 'time' ? 'time' : 'number'}" step="any" value="${esc(c.value)}">` : ''}${c.metric === 'time' ? `<input aria-label="End time" ${attrs} data-key="end" type="time" value="${esc(c.end)}">` : ''}</div>`;
+  const range = kind === 'time' || ['between','outside'].includes(c.operator);
+  return `<div class="condition-wrap"><div class="rule-block" data-drag="conditions" data-id="${esc(c.id)}">${blockControls(c.id,'conditions',index,length)}<select aria-label="Condition device" ${attrs} data-key="source">${options(sources,c.source)}</select><select aria-label="Reading" ${attrs} data-key="metric">${options(metricOptions(c.source),c.metric)}</select><select aria-label="Comparison" ${attrs} data-key="operator">${options(ops,c.operator)}</select>${kind !== 'boolean' ? `<input aria-label="${kind === 'time' ? 'Start time' : range ? 'Lower threshold' : 'Threshold'}" ${attrs} data-key="value" type="${kind === 'time' ? 'time' : 'number'}" step="any" value="${esc(c.value)}">` : ''}${range ? `<input aria-label="${kind === 'time' ? 'End time' : 'Upper threshold'}" ${attrs} data-key="end" type="${kind === 'time' ? 'time' : 'number'}" step="any" value="${esc(c.end)}">` : ''}</div><div class="condition-reading" data-condition-reading="${esc(c.id)}">${liveCondition(c)}</div></div>`;
 }
 function actionBlock(a, index, length) {
   const attrs = `data-block="${esc(a.id)}" data-kind="actions"`;
-  return `<div class="rule-block action" data-drag="actions" data-id="${esc(a.id)}">${blockControls(a.id,'actions',index,length)}<strong>${a.type === 'telegram' ? 'Telegram message' : 'Switch plug'}</strong>${a.type === 'telegram' ? `<textarea aria-label="Telegram message" ${attrs} data-key="message" maxlength="1000">${esc(a.message)}</textarea>` : `<select aria-label="Target plug" ${attrs} data-key="device_id">${options(home.document.devices.filter(d => d.kind === 'plug').map(d => [d.id,d.name]),a.device_id)}</select><select aria-label="Plug action" ${attrs} data-key="on">${options([['true','Turn ON'],['false','Turn OFF']],String(a.on))}</select>`}</div>`;
+  return `<div class="rule-block action" data-drag="actions" data-id="${esc(a.id)}">${blockControls(a.id,'actions',index,length)}<strong>${a.type === 'telegram' ? 'Telegram message' : a.on ? 'Turn plug ON' : 'Turn plug OFF'}</strong>${a.type === 'telegram' ? `<textarea aria-label="Telegram message" ${attrs} data-key="message" maxlength="1000">${esc(a.message)}</textarea>` : `<select aria-label="Target plug" ${attrs} data-key="device_id">${options(home.document.devices.filter(d => d.kind === 'plug').map(d => [d.id,d.name]),a.device_id)}</select><select aria-label="Plug action" ${attrs} data-key="on">${options([['true','Turn ON'],['false','Turn OFF']],String(a.on))}</select>`}</div>`;
 }
 function renderRulesList() {
   $('rule-count').textContent = home.document.rules.length;
@@ -187,9 +226,9 @@ function renderRules() {
   if (!selectedRule()) home.selected = home.document.rules[0]?.id;
   renderRulesList();
   const r = selectedRule();
-  if (!r) { $('rule-editor').innerHTML = '<div class="empty-state"><h3>Build your first automation.</h3>For example, turn a plug on when a sensor gets cold, or send a Telegram message when humidity rises.<br><button class="primary" data-action="new-rule">＋ New automation</button></div>'; return; }
+  if (!r) { $('rule-editor').innerHTML = '<div class="empty-state"><h3>Build your first automation.</h3>Turn a plug on when the battery is full and excess power is available, turn it off when power drops, or send Telegram alerts.<br><button class="primary" data-action="new-rule">＋ New automation</button></div>'; return; }
   $('rule-editor').innerHTML = `<div class="rule-title"><input aria-label="Automation name" data-rule-key="name" value="${esc(r.name)}" maxlength="120"><label class="toggle-label"><input type="checkbox" data-rule-key="enabled" ${r.enabled ? 'checked' : ''}>Enabled</label></div><p class="rule-intro">Drag blocks below, or click them to add. Rules run after saving. The first fresh reading sets the baseline; a later crossing runs the actions.</p>
-    <div class="builder-palette"><span>CONDITIONS</span>${[['temperature','Temperature'],['humidity','Humidity'],['power','Plug state'],['solar','Solar & battery'],['time','Time window']].map(([id,label]) => `<button class="palette-block" data-handle="true" data-palette="${id}" data-kind="conditions" data-action="add-palette">＋ ${label}</button>`).join('')}<span>ACTIONS</span>${[['plug','Switch plug'],['telegram','Telegram']].map(([id,label]) => `<button class="palette-block" data-handle="true" data-palette="${id}" data-kind="actions" data-action="add-palette">＋ ${label}</button>`).join('')}</div>
+    <div class="builder-palette"><span>CONDITIONS</span>${[['soc','Battery SOC'],['excess','Excess power'],['solar','Solar & power'],['dashboard','Dashboard reading'],['temperature','Temperature'],['humidity','Humidity'],['power','Plug state'],['time','Time window']].map(([id,label]) => `<button class="palette-block" data-handle="true" data-palette="${id}" data-kind="conditions" data-action="add-palette">＋ ${label}</button>`).join('')}<span>ACTIONS</span>${[['plug-on','Turn plug ON'],['plug-off','Turn plug OFF'],['telegram','Telegram']].map(([id,label]) => `<button class="palette-block" data-handle="true" data-palette="${id}" data-kind="actions" data-action="add-palette">＋ ${label}</button>`).join('')}</div>
     <div class="flow-section drop-zone" data-drop="conditions"><div class="flow-heading"><span class="step-title">WHEN</span><label class="toggle-label">Match <select aria-label="Match conditions" data-rule-key="match">${options([['all','all conditions'],['any','any condition']],r.match)}</select></label></div>${r.conditions.map((c,i) => conditionBlock(c,i,r.conditions.length)).join('')}<button class="add-block" data-action="add-condition">＋ Add condition</button></div>
     <div class="flow-arrow" aria-hidden="true">↓</div>
     <div class="flow-section drop-zone" data-drop="actions"><div class="flow-heading"><span class="step-title">THEN · ACTIONS</span></div>${r.actions.map((a,i) => actionBlock(a,i,r.actions.length)).join('')}<button class="add-block" data-action="add-action">＋ Add action</button></div>
@@ -219,6 +258,10 @@ async function refresh() {
     const payload = await api('');
     home.readings = payload.devices;
     home.events = payload.events;
+    home.sources = payload.condition_sources || {};
+    home.deviceMetrics = payload.device_metrics || {};
+    home.dashboard = payload.dashboard || {};
+    updateConditionReadings();
     if (!home.dirty && !home.dialog) {
       const revisionChanged = !home.document || home.document.revision !== payload.document.revision;
       home.document = payload.document;
@@ -245,9 +288,10 @@ async function handleAction(button) {
   if (action === 'move-device') { move(home.document.devices,id,button.dataset.direction); renderDevices(); return; }
   if (action === 'power') { await post(`/devices/${encodeURIComponent(id)}/power`,{on:button.dataset.on === 'true',hold_minutes:15}); notice('Command queued. Waiting for the plug to confirm.'); await refresh(); return; }
   if (action === 'resume') { await post(`/devices/${encodeURIComponent(id)}/resume`,{}); await refresh(); return; }
+  if (action === 'solar-plug-pair') return solarPlugPair();
   if (action === 'new-rule') {
-    const condition = newCondition(home.document.devices.some(d => d.kind === 'sensor') ? 'temperature' : 'solar');
-    const rule = {id:uid('rule'),name:'New automation',enabled:false,match:'all',conditions:[condition],actions:[newAction('telegram')],for_seconds:0,cooldown_seconds:60};
+    const condition = newCondition('soc');
+    const rule = {id:uid('rule'),name:'New automation',enabled:false,match:'all',conditions:[condition],actions:[newAction(home.document.devices.some(d => d.kind === 'plug') ? 'plug-on' : 'telegram')],for_seconds:0,cooldown_seconds:60};
     home.document.rules.push(rule); home.selected = rule.id; changed(); showView('automations'); return;
   }
   if (action === 'select-rule') { home.selected = id; renderRules(); return; }
@@ -256,8 +300,8 @@ async function handleAction(button) {
     home.document.rules = home.document.rules.filter(r => r.id !== home.selected); changed(); renderRules(); return;
   }
   if (action === 'add-palette') return addBlock(button.dataset.kind,button.dataset.palette);
-  if (action === 'add-condition') return addBlock('conditions','solar');
-  if (action === 'add-action') return addBlock('actions','telegram');
+  if (action === 'add-condition') return addBlock('conditions','soc');
+  if (action === 'add-action') return addBlock('actions',home.document.devices.some(d => d.kind === 'plug') ? 'plug-on' : 'telegram');
   if (action === 'remove-block') { const r=selectedRule(); r[button.dataset.kind]=r[button.dataset.kind].filter(b => b.id !== id); changed(); renderRules(); return; }
   if (action === 'move-block') { move(selectedRule()[button.dataset.kind],id,button.dataset.direction); renderRules(); return; }
   if (action === 'preview-rule') {
@@ -309,12 +353,13 @@ function updateRuleInput(event) {
   block[key]=key === 'on' ? el.value === 'true' : el.type === 'number' ? Number(el.value) : el.value;
   if (key === 'source') { block.metric=metricOptions(block.source)[0][0]; }
   if (key === 'source' || key === 'metric') {
-    block.operator=block.metric === 'power' ? 'is_on' : block.metric === 'time' ? 'between' : 'below';
-    block.value=block.metric === 'time' ? '08:00' : 40;
-    block.end='18:00';
+    const defaults=defaultCondition(block.source,block.metric);
+    Object.assign(block,{operator:defaults.operator,value:defaults.value,end:defaults.end});
   }
+  if (key === 'operator' && metricDefinition(block.source,block.metric).kind !== 'time' && ['between','outside'].includes(block.operator) && !(Number(block.end) > Number(block.value))) block.end=Number(block.value)+10;
+
   changed();
-  if (key === 'source' || key === 'metric') renderRules();
+  if (key === 'source' || key === 'metric' || key === 'operator' || key === 'on') renderRules();
 
 }
 document.addEventListener('input', event => {

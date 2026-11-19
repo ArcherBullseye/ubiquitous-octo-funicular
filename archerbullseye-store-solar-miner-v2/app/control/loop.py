@@ -239,7 +239,7 @@ class ControlLoop:
                     ramp_plan["needs_battery_capacity"] = (ramp_enabled and not ramp_dry_run
                                                            and not ramp_cap_ok)
                 ramp_armed = bool(would_arm and ramp_plan)
-                state.set("ramp", ramp_plan)
+                state.update({"ramp": ramp_plan, "ramp_last_updated": utcnow_str() if ramp_plan else None})
 
                 # Log ramp decisions whenever a miner's target changes (dry-run
                 # included, so its reasoning is trackable before arming).
@@ -338,6 +338,7 @@ class ControlLoop:
         }
         if miners_snapshot is not None:
             updates["miners"] = miners_snapshot
+            updates["miners_last_updated"] = now_str
         state.update(updates)
 
         if readings is not None:

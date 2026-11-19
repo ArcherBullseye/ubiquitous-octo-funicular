@@ -6,8 +6,9 @@ import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 MASK = '••••'
-METRICS = {'sensor': ('temperature_f', 'humidity_pct'), 'plug': ('power',),
-           'solar': ('soc', 'input_power_w', 'grid_power_w'), 'clock': ('time',)}
+from .metrics import definitions
+
+NUMERIC_OPERATORS = ('below', 'above', 'at_most', 'at_least', 'equals', 'between', 'outside')
 
 
 def number(value, label, low, high):
@@ -133,13 +134,14 @@ def validate(doc, previous):
         for c in rows(row, 'conditions', 20):
             source = c.get('source')
             device = devices.get(source)
-            kind = device['kind'] if device else source
-            if kind not in METRICS or c.get('metric') not in METRICS[kind]:
+            available = definitions(source, device)
+            if c.get('metric') not in available:
                 raise ValueError('Choose an existing device and a supported reading for each condition.')
             if rule['enabled'] and device and not device['enabled']:
                 raise ValueError('Enable source devices before enabling their automations.')
             condition = {k: c.get(k) for k in ('id', 'source', 'metric', 'operator')}
-            if kind == 'clock':
+            metric_kind = available[c['metric']]['kind']
+            if metric_kind == 'time':
                 for key in ('value', 'end'):
                     value = c.get(key)
                     if not isinstance(value, str) or not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', value):
@@ -147,13 +149,17 @@ def validate(doc, previous):
                     condition[key] = value
                 if condition['value'] == condition['end'] or c.get('operator') != 'between':
                     raise ValueError('Time windows need different start and end times.')
-            elif kind == 'plug':
+            elif metric_kind == 'boolean':
                 if c.get('operator') not in ('is_on', 'is_off'):
-                    raise ValueError('Plug conditions must be on or off.')
+                    raise ValueError('State conditions must be true/on or false/off.')
             else:
-                if c.get('operator') not in ('below', 'above'):
-                    raise ValueError('Numeric conditions must be above or below a value.')
-                condition['value'] = number(c.get('value'), 'Threshold', -1000000, 1000000)
+                if c.get('operator') not in NUMERIC_OPERATORS:
+                    raise ValueError('Choose a supported numeric comparison.')
+                condition['value'] = number(c.get('value'), 'Threshold', -1e12, 1e12)
+                if c['operator'] in ('between', 'outside'):
+                    condition['end'] = number(c.get('end'), 'Upper threshold', -1e12, 1e12)
+                    if condition['end'] <= condition['value']:
+                        raise ValueError('The upper threshold must be greater than the lower threshold.')
             rule['conditions'].append(condition)
         for a in rows(row, 'actions', 20):
             action = {'id': a['id'], 'type': a.get('type')}

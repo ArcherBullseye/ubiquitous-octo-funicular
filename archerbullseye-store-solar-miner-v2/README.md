@@ -128,3 +128,35 @@ snapshots. Readings remain in memory until restart. The dashboard summary lists
 all sensors, and the workspace contains each plug's manual controls.
 
 Run regression checks with `python3 -m unittest discover -s tests -v`.
+
+### Dashboard conditions and plug actions
+
+The automation builder offers separate **Turn plug ON** and **Turn plug OFF**
+actions. Use the **Solar plug ON/OFF pair** shortcut to create two paused rules
+for the first configured plug. Review the plug selection and thresholds in
+both rules, enable them, then save the workspace. The starting example turns
+ON when SOC is at least 95% and excess power is at least 1,000 W for 60 seconds;
+it turns OFF when SOC is at most 90% or excess power is at most 0 W for 30 seconds.
+
+Conditions can use Home sensors/plugs, battery SOC, inverter power
+flows, charging/discharging, grid import/export, charge reserve, Smart Start,
+end-of-day projections/protection, ramp current/target/mode, weather and the
+next forecast hour, miner running/reachability/holds/hashrate, pool earnings,
+Bitcoin price, dehumidifier readings, and local time windows. Numeric comparisons
+include above, below, at least, at most, equals, between (inclusive), and outside
+a range. State readings offer true/on and false/off. Live values and units are
+shown below each condition, and Check saved conditions uses the same adapter as
+the runtime engine without running actions.
+
+Excess power is grid flow + battery charging power − the battery charging
+reserve, matching the ramp's headroom calculation. It describes additional
+available power after existing loads; negative values mean a deficit. It is
+available without enabling the miner ramp. When a charge reserve depends on
+the weather forecast, missing/expired forecast data pauses that condition.
+
+Source timestamps are independent: power and miner/dehumidifier readings
+expire after 5 minutes, pool/Bitcoin readings after 15 minutes, and weather
+after 1 hour. Home sensor/plug reports keep their existing 30-minute freshness
+window. Missing, invalid, or stale required readings pause a rule. Rules still
+establish a baseline on startup/reconnect; subsequent condition crossings run
+the actions. Manual plug holds and cooldowns continue to apply.
