@@ -135,7 +135,20 @@ children, and plug commands are serialized through that worker.
 
 Freshness timestamps indicate when a report was received, including cached hub
 snapshots. Readings remain in memory until restart. The dashboard summary lists
-all sensors, and the workspace contains each plug's manual controls.
+selected devices, and the workspace contains each plug's manual controls.
+
+Powered Zigbee devices use a separate, read-only gateway online-status query
+through the existing worker/socket at startup and every 30 seconds. Cached DP
+snapshots retain their readings but cannot override a gateway offline report.
+A positive online check expires after 90 seconds; unsupported or unavailable
+checks display an unconfirmed red icon instead of claiming the child is online.
+Only explicitly listed online/offline node IDs are updated, because gateway
+responses can arrive in multiple parts. Sleeping sensors keep their existing
+report-based freshness. Detection still depends on when the gateway notices a
+missing child; this is not an instantaneous mains-power detector. Online/offline
+changes appear in Activity. Power-command confirmation also requires an online
+connection, so a cached matching relay value cannot falsely confirm success.
+Reference: https://github.com/jasonacox/tinytuya/pull/308
 
 Run regression checks with `python3 -m unittest discover -s tests -v`.
 
@@ -245,3 +258,14 @@ connections, manual holds, threshold-crossing memory, and cooldowns. Validation
 allows up to 50 groups, 80-character names, and the supplied icon catalogue;
 dangling references and invalid group IDs/icons are rejected atomically. Older
 API callers that omit grouping fields preserve existing groups/assignments.
+
+### Home dashboard device selection (v2.5.0)
+
+Use the gear on the dashboard's Home Assistant card to open **Dashboard card**
+in Home. Check the devices to show, then **Save workspace**. Sensors show
+temperature/humidity, plugs show ON/OFF and supported power draw, and
+dehumidifiers show ON/OFF and humidity, with a freshness dot for each device.
+Rows follow the order in Devices. Existing installations default to showing
+all sensors; an explicitly empty selection hides all device rows. Visibility
+changes preserve connections, manual holds, and automation state. Older API
+clients preserve saved choices when they omit dashboard visibility settings.

@@ -10,7 +10,7 @@ async function refreshDeviceInfo() {
     if (deviceInfo.id !== id || !$('device-info-dialog').open) return;
     $('device-info-title').textContent=data.name;
     const row=data.readings;
-    $('device-info-status').textContent=row.status === 'connected' ? 'Connected · '+ageLabel(row.last_report_at || Object.values(row.updated_at || {})[0]) : 'Waiting / offline · last reports shown';
+    $('device-info-status').textContent=row.status === 'connected' ? 'Connected · '+ageLabel(row.last_report_at || Object.values(row.updated_at || {})[0]) : (row.availability_reason || 'Waiting / offline · last reports shown');
     const configured=home.document.devices.find(device=>device.id === id);
     const base=home.deviceMetrics[configured?.kind] || {};
     const entries=[...Object.entries(base).map(([key,item])=>({id:key,label:item.label,unit:''})),...data.telemetry];

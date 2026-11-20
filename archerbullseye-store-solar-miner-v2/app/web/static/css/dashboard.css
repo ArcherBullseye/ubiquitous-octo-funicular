@@ -97,9 +97,17 @@ button {
 button:hover { opacity: .88; }
 button:active { transform: translateY(1px); }
 .btn-settings {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 7px 14px; border-radius: 9px;
+  font-family: inherit; font-size: 13px; font-weight: 600; line-height: normal;
+  text-decoration: none; white-space: nowrap;
   background: var(--card); color: var(--text);
   border: 1px solid var(--border);
+  transition: opacity .15s, transform .1s;
 }
+.btn-settings:hover { opacity: .88; }
+.btn-settings:active { transform: translateY(1px); }
+.btn-settings:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
 .btn-amber { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #1a1203; }
 .btn-green { background: linear-gradient(135deg, #4ade80, #22c55e); color: #04140c; }
 .btn-red   { background: linear-gradient(135deg, #f87171, #ef4444); color: #fff; }

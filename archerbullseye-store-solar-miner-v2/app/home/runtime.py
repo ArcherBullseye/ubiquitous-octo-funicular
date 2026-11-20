@@ -17,6 +17,13 @@ from .groups import execution_document
 from .store import load_document, log_event, manual_holds, set_manual_hold
 
 
+CHILD_AVAILABILITY_MAX_AGE = 90
+
+
+def zigbee_powered(device):
+    return device.get('transport') == 'zigbee' and device.get('kind') in ('plug', 'dehumidifier')
+
+
 def stamp():
     return datetime.now(timezone.utc).isoformat()
 
@@ -58,7 +65,41 @@ class ConnectionWorker(threading.Thread):
         self.root = None
         self.children = {}
 
+    def availability_report(self, response):
+        if not isinstance(response, dict) or response.get('reqType') != 'subdev_online_stat_report':
+            return False
+        data = response.get('data')
+        if not isinstance(data, dict):
+            return False
+        online, offline = data.get('online', []), data.get('offline', [])
+        if (not isinstance(online, list) or not isinstance(offline, list)
+                or any(not isinstance(cid, str) for cid in online + offline)):
+            return False
+        online, offline = set(online), set(offline)
+        for device in self.devices:
+            if not zigbee_powered(device):
+                continue
+            cid = device['node_id']
+            # Replies can be split across frames. Absence from a list is not
+            # evidence that an unmentioned device is offline.
+            if cid in offline or cid in online:
+                self.service.child_availability(device['id'], cid not in offline)
+        return True
+
+    def query_availability(self):
+        if not any(zigbee_powered(device) for device in self.devices):
+            return
+        try:
+            self.route(self.check(self.root.subdev_query()))
+        except Exception:
+            # Some firmware does not support this query. A failed/unsupported
+            # query must not disconnect the hub or declare every child offline.
+            # Previous positive checks expire rather than being refreshed by DPS.
+            pass
+
     def accept(self, device, response):
+        if self.availability_report(response):
+            return {}
         if device['transport'] == 'zigbee' and isinstance(response, dict):
             nested = response.get('data') or {}
             cid = response.get('cid') or (nested.get('cid') if isinstance(nested, dict) else None)
@@ -75,6 +116,8 @@ class ConnectionWorker(threading.Thread):
 
     def route(self, response):
         if not isinstance(response, dict):
+            return
+        if self.availability_report(response):
             return
         nested = response.get('data') or {}
         cid = response.get('cid') or (nested.get('cid') if isinstance(nested, dict) else None)
@@ -93,8 +136,11 @@ class ConnectionWorker(threading.Thread):
         try:
             response = self.children[device['id']].status()
             self.check(response)
+            if self.availability_report(response):
+                return
+            if device['kind'] in ('plug', 'dehumidifier') and not data_points(response):
+                raise ConnectionError('No device report')
             self.accept(device, response)
-            self.route(response)
         except Exception:
             # An unavailable child must not block other devices on its gateway.
             self.service.connection_status(device['id'], 'offline')
@@ -120,7 +166,8 @@ class ConnectionWorker(threading.Thread):
                 self.check(child.set_value(int(device.get('power_dp', '1')), command['on']))
                 # A successful command response alone does not establish the resulting power state.
                 values = self.accept(device, self.check(child.status()))
-                if values.get('power') is not command['on']:
+                if (values.get('power') is not command['on']
+                        or self.service.snapshot().get(device['id'], {}).get('status') != 'connected'):
                     raise ConnectionError('The device has not confirmed the requested state. Check the device.')
                 self.service.finish_command(device['id'], True, command['origin'], 'Confirmed ' + ('ON' if command['on'] else 'OFF'))
             except Exception:
@@ -140,6 +187,7 @@ class ConnectionWorker(threading.Thread):
                     self.children[device['id']] = (tinytuya.Device(device['device_id'], parent=self.root, cid=device['node_id'])
                         if device['transport'] == 'zigbee' else self.root)
                     self.service.connection_status(device['id'], 'waiting')
+                self.query_availability()
                 for device in self.devices:
                     if self.stop_event.is_set():
                         break
@@ -154,6 +202,7 @@ class ConnectionWorker(threading.Thread):
                         self.root.heartbeat(nowait=True)
                         heartbeat_at = time.monotonic() + 9
                     if time.monotonic() >= poll_at:
+                        self.query_availability()
                         for device in self.devices:
                             if self.stop_event.is_set():
                                 break
@@ -186,7 +235,36 @@ class HomeService:
 
     def snapshot(self):
         with self.lock:
-            return copy.deepcopy(self.readings)
+            readings = copy.deepcopy(self.readings)
+            now = time.time()
+            for device in (self.document or {}).get('devices', []):
+                if not device['enabled'] or not zigbee_powered(device) or device['id'] not in readings:
+                    continue
+                row = readings[device['id']]
+                row['availability_required'] = True
+                row['availability_max_age_seconds'] = CHILD_AVAILABILITY_MAX_AGE
+                try:
+                    age = now - datetime.fromisoformat(row.get('zigbee_online_at')).timestamp()
+                except (TypeError, ValueError, OverflowError):
+                    age = float('inf')
+                if row.get('zigbee_online') is False:
+                    row.update(status='offline', availability_reason='Hub reports device offline')
+                elif row.get('zigbee_online') is not True or not 0 <= age <= CHILD_AVAILABILITY_MAX_AGE:
+                    row.update(status='waiting' if row.get('status') != 'offline' else 'offline',
+                               availability_reason='Waiting for hub to confirm device online')
+            return readings
+
+    def child_availability(self, device_id, online):
+        with self.lock:
+            row = self.readings.setdefault(device_id, {'updated_at': {}})
+            previous = row.get('zigbee_online')
+            row.update(zigbee_online=online, zigbee_online_at=stamp(),
+                       status='connected' if online else 'offline')
+            self.publish()
+        if previous is not online:
+            device = next((d for d in (self.document or {}).get('devices', []) if d['id'] == device_id), {})
+            log_event('connection', device.get('name', 'Home device'),
+                      'Hub reports device online.' if online else 'Hub reports device offline. Cached readings are retained.')
 
     def report_points(self, device_id, points):
         # Keep only bounded numeric/boolean DP reports. Arbitrary strings/raw
@@ -201,14 +279,14 @@ class HomeService:
                 if dp in records or len(records) < 128:
                     records[dp] = dict(dp=dp, value=value, received_at=received)
             row = self.readings.setdefault(device_id, {'updated_at':{}})
-            row.update(status='connected', last_report_at=received)
+            row.update(status='offline' if row.get('zigbee_online') is False else 'connected', last_report_at=received)
             self.publish()
 
     def device_info(self, device_id):
         with self.lock:
             device = next((d for d in load_document()['devices'] if d['id'] == device_id), None)
             if not device: raise ValueError('Device not found.')
-            row = copy.deepcopy(self.readings.get(device_id, {}))
+            row = self.snapshot().get(device_id, {})
             raw = sorted(copy.deepcopy(list(self.raw_reports.get(device_id, {}).values())), key=lambda item:int(item['dp']))
             return dict(name=device['name'], readings=row, telemetry=device.get('telemetry', []), raw=raw)
 
@@ -227,28 +305,34 @@ class HomeService:
         with self.lock:
             row = self.readings.setdefault(device_id, {'updated_at': {}})
             row.update(values)
-            row['status'] = 'connected'
+            row['status'] = 'offline' if row.get('zigbee_online') is False else 'connected'
             row['updated_at'].update({key: stamp() for key in values})
             self.publish()
 
     def connection_status(self, device_id, status):
         with self.lock:
             previous = self.readings.get(device_id, {}).get('status')
-            self.readings.setdefault(device_id, {'updated_at': {}})['status'] = status
+            row = self.readings.setdefault(device_id, {'updated_at': {}})
+            row['status'] = status
+            if status in ('offline', 'waiting') and row.get('zigbee_online') is True:
+                row['zigbee_online'] = None
             self.publish()
         if status == 'offline' and previous != 'offline':
             name = next((d['name'] for d in (self.document or {}).get('devices', []) if d['id'] == device_id), 'Home device')
             log_event('connection', name, 'Local connection lost. Retrying.')
 
     def publish(self):
+        readings = self.snapshot()
         summary = {d['id']: {'name': d['name'], 'kind': d['kind'],
-                   **copy.deepcopy(self.readings.get(d['id'], {}))}
+                   **readings.get(d['id'], {})}
                    for d in (self.document or {}).get('devices', [])}
-        self.state.set('home_devices', summary)
         devices = (self.document or {}).get('devices', [])
+        selected = (self.document or {}).get('dashboard_devices')
+        ids = [d['id'] for d in devices if (d['kind'] == 'sensor' if selected is None else d['id'] in selected)]
+        self.state.update({'home_devices': summary, 'home_dashboard_device_ids': ids})
         owner = legacy_owner(self.document or {}, get_settings())
         if owner:
-            row = self.readings.get(owner['id'], {})
+            row = readings.get(owner['id'], {})
             connected = row.get('status') == 'connected'
             self.state.update({'dehum_managed_by_home': owner['id'],
                 'dehum_power': row.get('power') if connected else None,
@@ -264,7 +348,7 @@ class HomeService:
         sensor = next((d for d in devices if d['kind'] == 'sensor'), None)
         if sensor:
             self.state.set('home_sensor', {'name': sensor['name'], 'mapping_configured': True,
-                                          **copy.deepcopy(self.readings.get(sensor['id'], {}))})
+                                          **readings.get(sensor['id'], {})})
         else:
             self.state.set('home_sensor', None)
 
@@ -330,12 +414,13 @@ class HomeService:
         doc = load_document()
         if (self.document is not None and doc['revision'] != self.document['revision']
                 and execution_document(doc) == execution_document(self.document)):
-            # Group names/icons/assignments do not reconnect devices, cancel
+            # Presentation settings do not reconnect devices, cancel
             # manual holds, or reset the rule engine's crossing/cooldown memory.
             with self.lock:
                 self.document = doc
                 for worker in self.workers:
                     worker.revision = doc['revision']
+                self.publish()
         if self.document is None or doc['revision'] != self.document['revision']:
             for worker in self.workers:
                 worker.stop_event.set()

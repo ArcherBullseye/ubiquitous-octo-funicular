@@ -146,6 +146,16 @@ def validate(doc, previous):
         if d['enabled']:
             endpoints.add(endpoint)
     devices = {d['id']: d for d in result['devices']}
+    if 'dashboard_devices' in doc:
+        selected = doc['dashboard_devices']
+        if (not isinstance(selected, list) or len(selected) > 100
+                or any(not isinstance(key, str) or key not in devices for key in selected)
+                or len(selected) != len(set(selected))):
+            raise ValueError('Choose existing devices once each for the dashboard card.')
+        result['dashboard_devices'] = list(selected)
+    elif 'dashboard_devices' in previous:
+        # Older clients preserve visibility choices; removed devices disappear.
+        result['dashboard_devices'] = [key for key in previous['dashboard_devices'] if key in devices]
     for row in rows(doc, 'rules', 100):
         rule = {'id': row['id'], 'name': text(row, 'name'), 'enabled': flag(row, 'enabled'), 'match': row.get('match', 'all')}
         if not rule['name'] or rule['match'] not in ('all', 'any'):

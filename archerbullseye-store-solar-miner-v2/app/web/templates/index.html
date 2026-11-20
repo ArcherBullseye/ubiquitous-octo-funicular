@@ -138,11 +138,11 @@
       <div class="card stat-card acc-teal home-card">
         <div class="home-card-head">
           <div class="card-label">⌂ Home Assistant</div>
-          <button type="button" class="btn-settings home-settings-button" aria-label="Home settings" title="Home settings" onclick="location.href='/home'">⚙</button>
+          <button type="button" class="btn-settings home-settings-button" aria-label="Home settings" title="Home settings" onclick="location.href='/home#dashboard'">⚙</button>
         </div>
         <table class="home-readings" aria-label="Home sensor readings">
           <thead>
-            <tr><th scope="col">Name</th><th scope="col">Temp</th><th scope="col">Humidity</th></tr>
+            <tr><th scope="col">Name</th><th scope="col" id="home-reading-heading">Temp</th><th scope="col" id="home-detail-heading">Humidity</th></tr>
           </thead>
           <tbody id="home-device-rows">
             <tr>

@@ -953,3 +953,14 @@ dialog footer {
 .group-icon-title { font-size:13px;margin:20px 0 12px; }
 #group-form footer { display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap; }
 #remove-group { margin-right:auto; }
+
+.dashboard-settings-panel {max-width:850px;padding:24px;background:var(--panel);border:1px solid var(--line);border-radius:14px;}
+.dashboard-settings-panel h3 {margin-top:0;}
+.dashboard-settings-panel .hint {line-height:1.7;}
+.dashboard-settings-panel .toolbar {margin:20px 0;}
+.dashboard-device-option {display:flex;align-items:center;gap:14px;padding:16px 0;border-bottom:1px solid var(--line);cursor:pointer;}
+.dashboard-device-option input {width:18px;height:18px;accent-color:var(--yellow);flex-shrink:0;}
+.dashboard-device-option strong {display:block;font-size:15px;}
+.dashboard-device-option small {display:block;margin-top:5px;color:var(--muted);}
+.dashboard-visibility {margin-left:auto;color:var(--muted);font-size:12px;}
+.dashboard-preview-link {color:var(--blue);font-size:13px;}

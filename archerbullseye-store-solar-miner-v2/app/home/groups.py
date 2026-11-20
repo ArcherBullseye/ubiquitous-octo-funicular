@@ -45,6 +45,7 @@ def execution_document(document):
     result = copy.deepcopy(document)
     result.pop('revision', None)
     result.pop('groups', None)
+    result.pop('dashboard_devices', None)
     result['rules'] = [execution_rule(rule) for rule in result['rules']]
     for device in result.get('devices', []):
         if not device.get('telemetry'):

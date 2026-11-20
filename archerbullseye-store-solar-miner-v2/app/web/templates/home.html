@@ -19,6 +19,7 @@
     <nav class="sidebar" aria-label="Home navigation">
       <div class="workspace-mark">⌂</div><h1>Home</h1><p>Devices & automations</p>
       <button class="nav-item active" data-view="devices">▦ <span>Devices</span><b id="device-count">0</b></button>
+      <button class="nav-item" data-view="dashboard">▤ <span>Dashboard card</span></button>
       <button class="nav-item" data-view="automations">⑂ <span>Automations</span><b id="rule-count">0</b></button>
       <button class="nav-item" data-view="activity">◷ <span>Activity</span></button>
       <div class="sidebar-bottom"><span class="connection-dot"></span> Local connections<a href="/">← Back to dashboard</a></div>
@@ -30,6 +31,10 @@
         <div class="section-heading"><h3>Devices <small id="connected-count"></small></h3><span class="hint">Drag to arrange · arrow buttons work too</span></div>
         <div id="devices-grid" class="devices-grid"></div>
         <div class="section-heading hubs-heading"><h3>Hubs</h3></div><div id="hubs-list" class="hubs-list"></div>
+      </section>
+      <section id="view-dashboard" hidden>
+        <div class="page-heading"><div><h2>Dashboard card</h2><p>Choose the devices shown in the Home Assistant square on your main dashboard.</p></div><a class="dashboard-preview-link" href="/">View dashboard ↗</a></div>
+        <div class="dashboard-settings-panel"><h3>Visible devices</h3><p class="hint">Sensors show temperature and humidity. Smart plugs show ON/OFF and power draw when available. Dehumidifiers show ON/OFF and humidity. Each row keeps its freshness dot.</p><div class="toolbar"><button data-action="dashboard-sensors">Sensors only</button><button data-action="dashboard-all">Select all</button><button data-action="dashboard-none">Clear selection</button></div><div id="dashboard-device-options"></div><p id="dashboard-selection-count" class="hint" role="status"></p><p class="hint">Rows follow the order in Devices. Save workspace to apply your selection. Hiding a device here keeps its connection and automations running.</p></div>
       </section>
       <section id="view-automations" hidden>
         <div class="page-heading"><div><h2>Automations</h2><p>Connect readings and conditions to the actions you want.</p></div><div class="toolbar"><button data-action="new-group">＋ New group</button><button data-action="solar-plug-pair">＋ Solar device ON/OFF pair</button><button data-action="new-rule" class="primary">＋ New automation</button></div></div>

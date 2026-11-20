@@ -288,8 +288,7 @@ async function refresh() {
     const resp = await fetch('/api/status');
     if (!resp.ok) return;
     const s = await resp.json();
-    updateHomeSensor(s.home_sensor);
-    updateAdditionalSensors(s.home_devices);
+    updateHomeSensors(s.home_devices, s.home_sensor, s.home_dashboard_device_ids);
 
     el('status-dot').classList.toggle('fresh', isFresh(s.last_updated));
     el('last-updated').textContent = 'Updated ' + timeSince(s.last_updated);
@@ -1008,81 +1007,74 @@ setInterval(() => { refresh(); loadHistory(); loadDailySats(); loadMinerProfiles
 window.addEventListener('load', () => { refresh(); loadHistory(); loadDailySats(); loadMinerProfiles(); });
 
 
-function updateHomeSensor(sensor) {
-  const s = sensor || {};
-  const name = el('home-name');
-  name.textContent = s.name || 'Temperature & humidity';
-  name.title = name.textContent;
-  const times = s.updated_at || {};
-  const stale = metric => {
-    const updated = Date.parse(times[metric]);
-    return !Number.isFinite(updated) || Date.now() - updated > 30 * 60 * 1000;
-  };
-  const temp = s.temperature_c;
-  const humidity = s.humidity_pct;
-  el('home-temperature').textContent = temp == null ? '—' : (temp * 9 / 5 + 32).toFixed(1) + '°F';
-  el('home-humidity').textContent = humidity == null ? '—' : humidity.toFixed(0) + '%';
-  el('home-temperature').classList.toggle('stale-reading', stale('temperature_c'));
-  el('home-humidity').classList.toggle('stale-reading', stale('humidity_pct'));
-  el('home-temperature').title = 'Last received: ' + timeSince(times.temperature_c);
-  el('home-humidity').title = 'Last received: ' + timeSince(times.humidity_pct);
-  const dot = el('home-freshness');
-  const hasReading = temp != null || humidity != null;
-  const bothFresh = temp != null && humidity != null && !stale('temperature_c') && !stale('humidity_pct');
-  dot.dataset.state = !hasReading ? 'none' : bothFresh ? 'fresh' : 'stale';
-  const freshness = !hasReading ? 'No sensor readings yet' :
-    `${bothFresh ? 'Fresh readings' : 'Stale or incomplete readings'}. ` +
-    `Temperature: ${temp == null ? 'not received' : timeSince(times.temperature_c)}. ` +
-    `Humidity: ${humidity == null ? 'not received' : timeSince(times.humidity_pct)}.`;
-  dot.title = freshness;
-  dot.setAttribute('aria-label', freshness);
-  let label = 'Waiting', color = 'gray';
-  if (!sensor || s.status === 'unconfigured') label = 'Not configured';
-  else if (s.status === 'offline') { label = 'Offline'; color = 'amber'; }
-  else if (!s.mapping_configured) { label = 'Setup needed'; color = 'amber'; }
-  else if (temp != null || humidity != null) {
-    const old = stale('temperature_c') || stale('humidity_pct');
-    label = old ? 'Last reading' : 'Local'; color = old ? 'amber' : 'green';
+function updateHomeSensors(devices, legacySensor, selectedIds) {
+  const explicit = Array.isArray(selectedIds);
+  let rows = explicit ? selectedIds.map(id => devices?.[id]).filter(Boolean) :
+    Object.values(devices || {}).filter(device => device.kind === 'sensor');
+  if (!explicit) {
+    const primary = rows.findIndex(device => device.name === legacySensor?.name);
+    if (primary > 0) rows.unshift(...rows.splice(primary, 1));
+    if (!rows.length && legacySensor) rows = [{...legacySensor, kind:'sensor'}];
   }
-  el('home-status').textContent = label;
-  el('home-status').className = 'badge badge-' + color;
-  const stamps = Object.values(times).filter(Boolean).sort();
-  el('home-updated').textContent = s.error || (stamps.length ? 'Received ' + timeSince(stamps[0]) : 'Waiting for sensor report');
-}
-
-
-function updateAdditionalSensors(devices) {
+  const allSensors = rows.every(device => device.kind === 'sensor');
+  const allPlugs = rows.length && rows.every(device => device.kind === 'plug');
+  el('home-reading-heading').textContent = allSensors ? 'Temp' : allPlugs ? 'State' : 'Reading';
+  el('home-detail-heading').textContent = allSensors ? 'Humidity' : allPlugs ? 'Power' : 'Detail';
   const body = el('home-device-rows');
-  body.querySelectorAll('[data-extra-sensor]').forEach(row => row.remove());
-  const sensors = Object.values(devices || {}).filter(d => d.kind === 'sensor');
-  for (const sensor of sensors.slice(1)) {
-    const row = document.createElement('tr');
-    row.dataset.extraSensor = 'true';
-    const name = document.createElement('th');
-    name.scope = 'row';
-    name.textContent = sensor.name;
-    name.title = sensor.name;
-    const temp = document.createElement('td');
-    temp.className = 'num';
-    temp.textContent = sensor.temperature_f == null ? '—' : sensor.temperature_f.toFixed(1) + '°F';
-    const humidity = document.createElement('td');
-    const line = document.createElement('span');
+  body.replaceChildren();
+  if (!rows.length) {
+    const row = document.createElement('tr'), cell = document.createElement('td');
+    cell.colSpan = 3;
+    cell.textContent = explicit ? 'No devices selected' : 'No sensors configured';
+    row.append(cell); body.append(row);
+    el('home-status').textContent = explicit ? 'Hidden' : 'Not configured';
+    el('home-status').className = 'badge badge-gray';
+    el('home-updated').textContent = 'Choose devices in Home settings';
+    return;
+  }
+  const now = Date.now(), received = [];
+  let everyFresh = true, anyReading = false;
+  for (const device of rows) {
+    const sensor = device.kind === 'sensor', dehum = device.kind === 'dehumidifier';
+    const temperatureMetric = device.temperature_f == null ? 'temperature_c' : 'temperature_f';
+    const temperature = device.temperature_f ?? (device.temperature_c == null ? null : device.temperature_c * 9 / 5 + 32);
+    const metrics = sensor ? [temperatureMetric,'humidity_pct'] :
+      dehum ? ['power','humidity_pct'] : ['power', ...(device.power_w == null ? [] : ['power_w'])];
+    const values = sensor ? [temperature,device.humidity_pct] : dehum ? [device.power,device.humidity_pct] : [device.power,device.power_w];
+    const first = sensor ? (temperature == null ? '—' : temperature.toFixed(1)+'°F') :
+      device.power == null ? '—' : device.power ? 'On' : 'Off';
+    const second = sensor || dehum ? (device.humidity_pct == null ? '—' : device.humidity_pct.toFixed(0)+'%') :
+      device.power_w == null ? '—' : device.power_w.toLocaleString(undefined,{maximumFractionDigits:1})+' W';
+    const stamps = metrics.map(metric => Date.parse(device.updated_at?.[metric]));
+    const maxAge = (device.max_age_seconds || (dehum ? 300 : 1800))*1000;
+    const metricFresh = index => Number.isFinite(stamps[index]) && now-stamps[index] >= 0 && now-stamps[index] <= maxAge;
+    const hasReading = values.some(value => value != null);
+    const fresh = device.status === 'connected' && metrics.every((metric,index) => device[metric] != null && metricFresh(index));
+    everyFresh &&= fresh;
+    anyReading ||= hasReading;
+    received.push(...stamps.filter(Number.isFinite));
+    const row = document.createElement('tr'), name = document.createElement('th');
+    name.scope = 'row'; name.textContent = device.name; name.title = device.name;
+    const reading = document.createElement('td');
+    reading.className = 'num'; reading.textContent = first;
+    reading.classList.toggle('stale-reading', !metricFresh(0));
+    const detail = document.createElement('td'), line = document.createElement('span');
     line.className = 'home-humidity-reading';
     const value = document.createElement('span');
-    value.textContent = sensor.humidity_pct == null ? '—' : sensor.humidity_pct.toFixed(0) + '%';
+    value.className = 'num'; value.textContent = second;
+    value.classList.toggle('stale-reading', !metricFresh(1));
+    const firstLabel = sensor ? 'Temperature' : 'Power state', secondLabel = sensor || dehum ? 'Humidity' : 'Power draw';
+    reading.title = firstLabel+': '+first+'. Last received: '+timeSince(device.updated_at?.[metrics[0]]);
+    value.title = secondLabel+': '+second+'. Last received: '+timeSince(device.updated_at?.[metrics[1]]);
     const dot = document.createElement('span');
-    dot.className = 'home-freshness';
-    dot.setAttribute('role', 'img');
-    const stamps = ['temperature_f', 'humidity_pct'].map(key => Date.parse(sensor.updated_at?.[key]));
-    const fresh = stamps.every(t => Number.isFinite(t) && Date.now() - t < 1800000);
-    dot.dataset.state = !stamps.some(Number.isFinite) ? 'none' : fresh ? 'fresh' : 'stale';
-    const description = 'Temperature: ' + timeSince(sensor.updated_at?.temperature_f) +
-      '. Humidity: ' + timeSince(sensor.updated_at?.humidity_pct) + '.';
-    dot.title = description;
-    dot.setAttribute('aria-label', description);
-    line.append(value, dot);
-    humidity.append(line);
-    row.append(name, temp, humidity);
-    body.append(row);
+    dot.className = 'home-freshness'; dot.setAttribute('role','img');
+    dot.dataset.state = !hasReading ? 'none' : fresh ? 'fresh' : 'stale';
+    const description = (fresh ? 'Fresh readings. ' : 'Waiting, offline, or stale readings. ')+reading.title+'. '+value.title;
+    dot.title = description; dot.setAttribute('aria-label',description);
+    line.append(value,dot); detail.append(line); row.append(name,reading,detail); body.append(row);
   }
+  const offline = rows.every(device => device.status === 'offline');
+  el('home-status').textContent = everyFresh ? 'Local' : offline ? 'Offline' : anyReading ? 'Last reading' : 'Waiting';
+  el('home-status').className = 'badge badge-'+(everyFresh ? 'green' : anyReading || offline ? 'amber' : 'gray');
+  el('home-updated').textContent = received.length ? 'Received '+timeSince(new Date(Math.min(...received)).toISOString()) : 'Waiting for device reports';
 }

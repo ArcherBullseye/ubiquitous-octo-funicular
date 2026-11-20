@@ -4,7 +4,7 @@ name: Solar Miner v2
 tagline: Solar-surplus-driven Bitcoin mining and load control
 icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
 category: bitcoin
-version: "2.4.0"
+version: "2.5.0"
 port: 3002
 description: >-
   Monitor your Solis solar inverter and automatically control your LuxOS
@@ -34,6 +34,19 @@ support: https://github.com/ArcherBullseye/solarv2/issues
 gallery:
   - https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
 releaseNotes: >-
+  v2.5.0: Choose the devices displayed in the dashboard Home Assistant
+  card from its gear button, then save the workspace. Sensors show
+  temperature and humidity; plugs show ON/OFF and available wattage;
+  dehumidifiers show ON/OFF and humidity. Fixed duplicated sensor rows
+  and styled the Home navigation button to match Settings. Visibility
+  choices preserve device connections, manual holds, and automations.
+  Zigbee plugs now use read-only hub online/offline checks: cached OFF
+  reports cannot turn an offline icon yellow again. Old or unavailable
+  online checks stay red as unconfirmed. Detection follows the hub's
+  reporting delay. Cached relay states cannot falsely confirm a command
+  while the device is offline. Includes clearer connection details.
+
+
   v2.4.0: Fixed power automations silently missing a matching condition
   after startup, reconnecting, or editing. Power rules now default to
   maintaining the requested plug state while fresh conditions match,

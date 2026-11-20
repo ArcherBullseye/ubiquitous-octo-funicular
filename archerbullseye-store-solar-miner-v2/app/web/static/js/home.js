@@ -67,19 +67,25 @@ function ageLabel(iso) {
 function freshness(d, row) {
   const metrics = d.kind === 'dehumidifier' ? ['power','humidity_pct'] : d.kind === 'plug' ? ['power'] : ['temperature_f','humidity_pct'];
   const dates = metrics.map(m => Date.parse(row.updated_at?.[m]));
-  if (!dates.some(Number.isFinite)) return {style:'', text:'No report yet'};
+  if (!dates.some(Number.isFinite)) return {style:row.status === 'offline' ? 'old' : '', text:row.availability_reason || 'No report yet'};
   const oldest = Math.min(...dates);
   const fresh = dates.every(Number.isFinite) && Date.now() - oldest < (row.max_age_seconds || 1800)*1000 && row.status === 'connected';
   const stamp = dates.filter(Number.isFinite).sort((a,b) => a-b)[0];
-  return {style:fresh ? 'fresh' : 'old', text: row.status === 'offline' ? 'Connection offline' : ageLabel(new Date(stamp).toISOString())};
+  return {style:fresh ? 'fresh' : 'old', text: row.availability_reason || (row.status === 'offline' ? 'Connection offline' : ageLabel(new Date(stamp).toISOString()))};
 }
 function deviceIconStatus(device, row, now = Date.now()) {
   if (!device.enabled) return {style:'status-unknown', text:'Device disabled'};
   const maxAge = (row.max_age_seconds || (device.kind === 'dehumidifier' ? 300 : 1800))*1000;
   const reports = [...Object.values(row.updated_at || {}),row.last_report_at].map(Date.parse).filter(Number.isFinite);
   const latest = reports.length ? Math.max(...reports) : NaN;
+  if (row.availability_required) {
+    const checked = Date.parse(row.zigbee_online_at), age = now-checked;
+    if (row.zigbee_online !== true || !Number.isFinite(checked) || age < 0 || age > (row.availability_max_age_seconds || 90)*1000) {
+      return {style:'status-offline', text:row.availability_reason || 'Device online status is unconfirmed'};
+    }
+  }
   if (row.status !== 'connected' || !Number.isFinite(latest) || now-latest < 0 || now-latest > maxAge) {
-    return {style:'status-offline', text:'No current communication · power state unconfirmed'};
+    return {style:'status-offline', text:row.availability_reason || 'No current communication · power state unconfirmed'};
   }
   if (device.kind === 'sensor') return {style:'status-on', text:'In communication'};
   const powerStamp = Date.parse(row.updated_at?.power);
@@ -119,13 +125,23 @@ function renderDevices() {
   }).join('') : '<div class="empty-state"><h3>Your Home starts here.</h3>Add your hub, then sensors and smart plugs. Each device gets its own card.<br><button class="primary" data-action="new-device">＋ Add your first device</button></div>';
   $('hubs-list').innerHTML = home.document.hubs.map(h => `<div class="hub-row"><div><strong>${esc(h.name)}</strong><p>${esc(h.address || 'Connection details needed')} · ${h.enabled ? 'Enabled' : 'Disabled'} · ${devices.filter(d => d.hub_id === h.id).length} devices</p></div><button data-action="edit-hub" data-id="${esc(h.id)}">Configure</button></div>`).join('') || '<div class="empty-state">Using Zigbee? Add the G08Pro hub once, then select it for each paired device.</div>';
 }
+function dashboardSelection() {
+  return home.document.dashboard_devices ?? home.document.devices.filter(d=>d.kind === 'sensor').map(d=>d.id);
+}
+function renderDashboardSettings() {
+  const selected=new Set(dashboardSelection());
+  const labels={sensor:'Temperature & humidity',plug:'ON/OFF · power draw',dehumidifier:'ON/OFF · humidity'};
+  $('dashboard-device-options').innerHTML=home.document.devices.length ? home.document.devices.map(d=>`<label class="dashboard-device-option"><input type="checkbox" data-dashboard-device="${esc(d.id)}" ${selected.has(d.id) ? 'checked' : ''}><span><strong>${esc(d.name)}</strong><small>${esc(labels[d.kind] || d.kind)}${d.enabled ? '' : ' · disabled'}</small></span><span class="dashboard-visibility">${selected.has(d.id) ? 'Shown' : 'Hidden'}</span></label>`).join('') : '<p class="empty-state">Add devices in Devices to choose what appears here.</p>';
+  $('dashboard-selection-count').textContent=`${selected.size} device${selected.size === 1 ? '' : 's'} selected`;
+}
 function showView(view) {
   home.view = view;
   document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-  ['devices','automations','activity'].forEach(v => $('view-'+v).hidden = v !== view);
+  ['devices','dashboard','automations','activity'].forEach(v => $('view-'+v).hidden = v !== view);
   if (view === 'automations') renderRules();
   if (view === 'devices') renderDevices();
   if (view === 'activity') renderActivity();
+  if (view === 'dashboard') renderDashboardSettings();
 }
 function field(key, label, value = '', type = 'text', extra = '') {
   return `<label class="field">${label}<input name="${key}" aria-label="${esc(label)}" type="${type}" value="${esc(value)}" ${extra}></label>`;
@@ -405,6 +421,7 @@ async function refresh() {
       const revisionChanged = !home.document || home.document.revision !== payload.document.revision;
       home.document = payload.document;
       if (revisionChanged && home.view === 'automations') renderRules();
+      if (revisionChanged && home.view === 'dashboard') renderDashboardSettings();
       $('save-state').textContent = 'All changes saved';
     }
     $('rule-count').textContent = home.document.rules.length;
@@ -417,6 +434,10 @@ async function handleAction(button) {
   const id = button.dataset.id;
   if (['new-group','edit-group','toggle-group','choose-group-icon','close-group','remove-group'].includes(action)) return groupAction(button);
   if (action === 'device-info' || action.startsWith('device-info-')) return deviceInfoAction(button);
+  if (action.startsWith('dashboard-')) {
+    home.document.dashboard_devices=action === 'dashboard-none' ? [] : home.document.devices.filter(d=>action === 'dashboard-all' || d.kind === 'sensor').map(d=>d.id);
+    changed(); renderDashboardSettings(); return;
+  }
   if (action === 'discover' || action.startsWith('discovery-')) return discoveryAction(button);
   if (action === 'new-device' || action === 'new-hub') return openDevice(action === 'new-hub' ? 'hub' : 'device');
   if (action === 'edit-device' || action === 'edit-hub') return openDevice(action === 'edit-hub' ? 'hub' : 'device',id);
@@ -424,6 +445,7 @@ async function handleAction(button) {
   if (action === 'delete-dialog-item') {
     if (!confirm('Remove this item? Remove its automation references before saving.')) return;
     home.document[home.dialog.collection] = home.document[home.dialog.collection].filter(d => d.id !== home.dialog.value.id);
+    if (home.document.dashboard_devices) home.document.dashboard_devices=home.document.dashboard_devices.filter(id=>home.document.devices.some(d=>d.id === id));
     home.dialog = null; $('device-dialog').close(); changed(); renderDevices(); return;
   }
   if (action === 'move-device') { move(home.document.devices,id,button.dataset.direction); renderDevices(); return; }
@@ -467,8 +489,9 @@ $('save-workspace').addEventListener('click',async () => {
     const payload = await post('',home.document);
     home.document=payload.document; home.dirty=false;
     $('save-state').textContent='All changes saved';
-    notice('Workspace saved. Device connections and automations are updating.');
+    notice('Workspace saved.');
     renderDevices(); if(home.view === 'automations') renderRules();
+    if(home.view === 'dashboard') renderDashboardSettings();
   } catch(error) { notice(error.message,true); $('save-workspace').disabled=false; }
 });
 $('device-form').addEventListener('change',event => {
@@ -518,6 +541,12 @@ document.addEventListener('input', event => {
   if (event.target.tagName !== 'SELECT' && event.target.type !== 'checkbox') updateRuleInput(event);
 });
 document.addEventListener('change', event => {
+  if (event.target.dataset.dashboardDevice) {
+    const selected=new Set(dashboardSelection()), id=event.target.dataset.dashboardDevice;
+    if (event.target.checked) selected.add(id); else selected.delete(id);
+    home.document.dashboard_devices=home.document.devices.filter(d=>selected.has(d.id)).map(d=>d.id);
+    changed(); renderDashboardSettings(); return;
+  }
   if (event.target.tagName === 'SELECT' || event.target.type === 'checkbox') updateRuleInput(event);
 });
 // Pointer-based dragging supports mouse and touch without native drag-event timing.
@@ -591,5 +620,5 @@ document.addEventListener('pointerup', event => {
 document.addEventListener('pointercancel', clearDrag);
 document.addEventListener('keydown', event => {if(event.key === 'Escape') clearDrag();});
 window.addEventListener('beforeunload',event => {if(home.dirty){event.preventDefault();event.returnValue='';}});
-refresh();
+refresh().then(()=>{if(home.document && location.hash === '#dashboard') showView('dashboard');});
 setInterval(refresh,5000);
