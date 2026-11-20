@@ -67,6 +67,13 @@ async function discoveryAction(button) {
     if (action === 'discovery-confirm') status = await post('/discovery/confirm',{});
     if (action === 'discovery-sync') status = await post('/discovery/sync',{});
     if (action === 'discovery-disconnect') status = await post('/discovery/disconnect',{});
+    if (action === 'discovery-measurements') {
+      if (home.dirty) throw new Error('Save workspace changes first.');
+      const result=await post('/discovery/measurements',{batch:discovery.status.batch,revision:home.document.revision});
+      home.document=result.document; renderDevices();
+      notice(`Updated measurement mappings for ${result.updated} devices. Existing connection details and manual mappings were preserved.`);
+      return;
+    }
     if (action === 'discovery-import') {
       if (home.dirty) throw new Error('Save workspace changes before importing.');
       const ids = new Set(discovery.selected);

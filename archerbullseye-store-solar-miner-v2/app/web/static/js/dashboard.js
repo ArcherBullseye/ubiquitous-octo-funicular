@@ -378,12 +378,16 @@ async function refresh() {
     const dehumBadge = el('dehum-badge');
     const dehumErrEl = el('dehum-error');
     const dehumAutoB = el('dehum-auto-badge');
+    const homeManaged = !!s.dehum_managed_by_home;
+    el('s-dehum_auto_enabled').disabled = homeManaged;
+    el('dehum-home-managed').hidden = !homeManaged;
+    dehumAutoB.textContent = homeManaged ? 'Home rules' : 'Auto';
     if (s.dehum_power !== null && s.dehum_power !== undefined) {
       dehumBadge.textContent = s.dehum_power ? 'Running' : 'Idle';
       dehumBadge.className = 'badge ' + (s.dehum_power ? 'badge-green' : 'badge-gray');
       el('dehum-humidity').textContent = s.dehum_humidity != null ? s.dehum_humidity + '%' : '—';
       el('dehum-tank').style.display = s.dehum_tank_full ? '' : 'none';
-      dehumAutoB.style.display = s.dehum_auto_on ? '' : 'none';
+      dehumAutoB.style.display = homeManaged || s.dehum_auto_on ? '' : 'none';
       dehumErrEl.style.display = 'none';
       el('dehum-on-btn').className = s.dehum_power ? 'btn-amber' : 'btn-dim';
       el('dehum-off-btn').className = s.dehum_power ? 'btn-dim' : 'btn-amber';

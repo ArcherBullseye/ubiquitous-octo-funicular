@@ -10,7 +10,9 @@ from ..clients.zigbee import data_points, decode_readings
 from ..control.notifications import get_bot
 from ..db import get_settings
 from .engine import RuleEngine
-from .metrics import dashboard_readings
+from .metrics import dashboard_readings, numeric
+from .ownership import legacy_owner
+from .telemetry import decode_telemetry
 from .store import load_document, log_event, manual_holds, set_manual_hold
 
 
@@ -19,14 +21,28 @@ def stamp():
 
 
 def decoded_values(points, device):
-    if device['kind'] == 'plug':
+    if device['kind'] in ('plug', 'dehumidifier'):
         power = points.get(device.get('power_dp', '1'))
-        return {'power': power} if isinstance(power, bool) else {}
+        values = {'power': power} if isinstance(power, bool) else {}
+        if device['kind'] == 'dehumidifier':
+            for metric, dp, divisor in (('humidity_pct', 'humidity_dp', 'humidity_divisor'),
+                                        ('target_humidity_pct', 'target_humidity_dp', 'target_humidity_divisor')):
+                raw = points.get(device.get(dp, {'humidity_dp':'109', 'target_humidity_dp':'3'}[dp]))
+                if numeric(raw):
+                    value = raw / device.get(divisor, 1)
+                    if 0 <= value <= 100:
+                        values[metric] = value
+            tank = points.get(device.get('tank_full_dp', '111'))
+            if type(tank) is bool:
+                values['tank_full'] = tank
+        values.update(decode_telemetry(points, device))
+        return values
     settings = {'home_' + key: device.get(key) for key in (
         'temperature_dp', 'humidity_dp', 'temperature_divisor', 'humidity_divisor', 'temperature_unit')}
     values = decode_readings(points, settings)
     if 'temperature_c' in values:
         values['temperature_f'] = round(values['temperature_c'] * 9 / 5 + 32, 1)
+    values.update(decode_telemetry(points, device))
     return values
 
 
@@ -37,6 +53,7 @@ class ConnectionWorker(threading.Thread):
         self.revision = revision
         self.stop_event = threading.Event()
         self.commands = queue.Queue(maxsize=30)
+        self.status_requests = queue.Queue(maxsize=1)
         self.root = None
         self.children = {}
 
@@ -48,6 +65,8 @@ class ConnectionWorker(threading.Thread):
                 self.route(response)
                 return {}
         points = data_points(response)
+        if points:
+            self.service.report_points(device['id'], points)
         values = decoded_values(points, device)
         if values:
             self.service.report(device['id'], values)
@@ -79,6 +98,16 @@ class ConnectionWorker(threading.Thread):
             # An unavailable child must not block other devices on its gateway.
             self.service.connection_status(device['id'], 'offline')
 
+    def read_requested_status(self):
+        if self.stop_event.is_set(): return
+        try:
+            requested = self.status_requests.get_nowait()
+        except queue.Empty:
+            return
+        device = next((d for d in self.devices if d['id'] == requested), None)
+        if device:
+            self.poll_device(device)
+
     def drain_commands(self):
         while not self.commands.empty() and not self.stop_event.is_set():
             command = self.commands.get_nowait()
@@ -91,10 +120,10 @@ class ConnectionWorker(threading.Thread):
                 # A successful command response alone does not establish the resulting power state.
                 values = self.accept(device, self.check(child.status()))
                 if values.get('power') is not command['on']:
-                    raise ConnectionError('The plug has not confirmed the requested state. Check the device.')
+                    raise ConnectionError('The device has not confirmed the requested state. Check the device.')
                 self.service.finish_command(device['id'], True, command['origin'], 'Confirmed ' + ('ON' if command['on'] else 'OFF'))
             except Exception:
-                self.service.finish_command(device['id'], False, command['origin'], 'Plug command failed or could not be confirmed. Check the device.')
+                self.service.finish_command(device['id'], False, command['origin'], 'Power command failed or could not be confirmed. Check the device.')
 
     def run(self):
         import tinytuya
@@ -119,6 +148,7 @@ class ConnectionWorker(threading.Thread):
                 poll_at = time.monotonic() + 30
                 while not self.stop_event.is_set():
                     self.drain_commands()
+                    self.read_requested_status()
                     if time.monotonic() >= heartbeat_at:
                         self.root.heartbeat(nowait=True)
                         heartbeat_at = time.monotonic() + 9
@@ -126,7 +156,7 @@ class ConnectionWorker(threading.Thread):
                         for device in self.devices:
                             if self.stop_event.is_set():
                                 break
-                            if device['kind'] == 'plug':
+                            if device['kind'] in ('plug', 'dehumidifier'):
                                 self.poll_device(device)
                         poll_at = time.monotonic() + 30
                     self.route(self.check(self.root.receive()))
@@ -151,10 +181,46 @@ class HomeService:
         self.device_workers = {}
         self.engine = RuleEngine()
         self.readings = {}
+        self.raw_reports = {}
 
     def snapshot(self):
         with self.lock:
             return copy.deepcopy(self.readings)
+
+    def report_points(self, device_id, points):
+        # Keep only bounded numeric/boolean DP reports. Arbitrary strings/raw
+        # blobs can contain credentials or private text and are not exposed.
+        safe = {str(dp):value for dp,value in points.items()
+                if str(dp).isdigit() and 1 <= int(dp) <= 9999 and (type(value) is bool or numeric(value))}
+        if not safe: return
+        with self.lock:
+            records = self.raw_reports.setdefault(device_id, {})
+            received = stamp()
+            for dp,value in list(safe.items())[:128]:
+                if dp in records or len(records) < 128:
+                    records[dp] = dict(dp=dp, value=value, received_at=received)
+            row = self.readings.setdefault(device_id, {'updated_at':{}})
+            row.update(status='connected', last_report_at=received)
+            self.publish()
+
+    def device_info(self, device_id):
+        with self.lock:
+            device = next((d for d in load_document()['devices'] if d['id'] == device_id), None)
+            if not device: raise ValueError('Device not found.')
+            row = copy.deepcopy(self.readings.get(device_id, {}))
+            raw = sorted(copy.deepcopy(list(self.raw_reports.get(device_id, {}).values())), key=lambda item:int(item['dp']))
+            return dict(name=device['name'], readings=row, telemetry=device.get('telemetry', []), raw=raw)
+
+    def refresh_device(self, device_id):
+        with self.lock:
+            if not self.document or load_document()['revision'] != self.document['revision']:
+                raise ValueError('Home is reconnecting. Try again shortly.')
+            worker = self.device_workers.get(device_id)
+            if not worker: raise ValueError('Enable and connect this device before requesting a report.')
+            try:
+                worker.status_requests.put_nowait(device_id)
+            except queue.Full:
+                raise ValueError('A reading request is already waiting. Try again shortly.') from None
 
     def report(self, device_id, values):
         with self.lock:
@@ -179,6 +245,21 @@ class HomeService:
                    for d in (self.document or {}).get('devices', [])}
         self.state.set('home_devices', summary)
         devices = (self.document or {}).get('devices', [])
+        owner = legacy_owner(self.document or {}, get_settings())
+        if owner:
+            row = self.readings.get(owner['id'], {})
+            connected = row.get('status') == 'connected'
+            self.state.update({'dehum_managed_by_home': owner['id'],
+                'dehum_power': row.get('power') if connected else None,
+                'dehum_humidity': row.get('humidity_pct') if connected else None,
+                'dehum_tank_full': row.get('tank_full') if connected else None,
+                'dehum_last_updated': (row.get('updated_at') or {}).get('power'),
+                'dehum_auto_on': False,
+                'dehum_error': None if connected else 'Home connection is waiting or offline.'})
+        elif self.state.get('dehum_managed_by_home'):
+            self.state.update({'dehum_managed_by_home': None, 'dehum_power': None,
+                               'dehum_humidity': None, 'dehum_last_updated': None,
+                               'dehum_tank_full': None, 'dehum_auto_on': False, 'dehum_error': None})
         sensor = next((d for d in devices if d['kind'] == 'sensor'), None)
         if sensor:
             self.state.set('home_sensor', {'name': sensor['name'], 'mapping_configured': True,
@@ -200,9 +281,11 @@ class HomeService:
                 raise ValueError('The Home workspace is reconnecting. Try again shortly.')
             device = next((d for d in self.document['devices'] if d['id'] == device_id), None)
             worker = self.device_workers.get(device_id)
-            if not device or device['kind'] != 'plug' or not device['enabled'] or not worker:
-                raise ValueError('Enable and connect this plug before switching it.')
+            if not device or device['kind'] not in ('plug', 'dehumidifier') or not device['enabled'] or not worker:
+                raise ValueError('Enable and connect this device before switching it.')
             row = self.readings[device_id]
+            if on and device['kind'] == 'dehumidifier' and row.get('tank_full') is True:
+                raise ValueError('Empty the dehumidifier tank before turning it on.')
             if automatic and row.get('hold_until', 0) > time.time():
                 raise ValueError(f"{device['name']} is under manual control. This action was skipped.")
             if row.get('pending'):
@@ -255,8 +338,10 @@ class HomeService:
                 self.device_workers = {}
                 self.workers = []
                 holds = manual_holds()
+                self.raw_reports = {}
                 self.readings = {d['id']: {'status': 'waiting' if d['enabled'] else 'disabled',
-                                 'updated_at': {}, 'hold_until': holds.get(d['id'], 0)}
+                                 'updated_at': {}, 'max_age_seconds': 300 if d['kind'] == 'dehumidifier' else 1800,
+                                 'hold_until': holds.get(d['id'], 0)}
                                  for d in doc['devices']}
                 for hub in doc['hubs']:
                     children = [d for d in doc['devices'] if d['enabled'] and d['transport'] == 'zigbee' and d['hub_id'] == hub['id']]

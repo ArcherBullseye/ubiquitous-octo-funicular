@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 MASK = '••••'
 from .metrics import definitions
+from .telemetry import validate_telemetry
 
 NUMERIC_OPERATORS = ('below', 'above', 'at_most', 'at_least', 'equals', 'between', 'outside')
 
@@ -86,8 +87,8 @@ def validate(doc, previous):
                     raise ValueError(f"Complete the connection details for {item['name']}.")
             else:
                 item.update({k: text(row, k) for k in ('kind', 'transport', 'hub_id', 'device_id', 'node_id')})
-                if item['kind'] not in ('sensor', 'plug') or item['transport'] not in ('zigbee', 'wifi'):
-                    raise ValueError('Choose a sensor or plug, connected by Zigbee or Wi-Fi.')
+                if item['kind'] not in ('sensor', 'plug', 'dehumidifier') or item['transport'] not in ('zigbee', 'wifi'):
+                    raise ValueError('Choose a sensor, smart plug, or dehumidifier, connected by Zigbee or Wi-Fi.')
                 if item['transport'] == 'wifi':
                     item.update(connection(row, old.get(row['id'], {})))
                 else:
@@ -99,12 +100,22 @@ def validate(doc, previous):
                 if item['transport'] == 'wifi' and item['enabled'] and not all(item[k] for k in ('address', 'local_key')):
                     raise ValueError(f"Complete the Wi-Fi details for {item['name']}.")
                 for dp in ('temperature_dp', 'humidity_dp', 'power_dp'):
-                    item[dp] = text(row, dp, 4) or {'temperature_dp': '103', 'humidity_dp': '101', 'power_dp': '1'}[dp]
+                    defaults = {'temperature_dp': '103', 'humidity_dp': '109' if item['kind'] == 'dehumidifier' else '101', 'power_dp': '1'}
+                    item[dp] = text(row, dp, 4) if dp in row else defaults[dp]
+                    if not item[dp] and dp == 'humidity_dp' and item['kind'] == 'dehumidifier':
+                        continue
                     if not item[dp].isdigit() or not 1 <= int(item[dp]) <= 9999:
                         raise ValueError('Data point IDs must be positive numbers.')
+                if item['kind'] == 'dehumidifier':
+                    for dp, default in (('target_humidity_dp', '3'), ('tank_full_dp', '111')):
+                        item[dp] = text(row, dp, 4) if dp in row else default
+                        if item[dp] and (not item[dp].isdigit() or not 1 <= int(item[dp]) <= 9999):
+                            raise ValueError('Data point IDs must be positive numbers or blank for unavailable readings.')
+                    item['target_humidity_divisor'] = number(row.get('target_humidity_divisor', 1), 'Target humidity divisor', 0.001, 10000)
                 for metric in ('temperature', 'humidity'):
                     key = metric + '_divisor'
                     item[key] = number(row.get(key, 1), key, 0.001, 10000)
+                item['telemetry'] = validate_telemetry(row.get('telemetry', []))
                 item['temperature_unit'] = row.get('temperature_unit', 'C')
                 if item['temperature_unit'] not in ('C', 'F'):
                     raise ValueError('Choose Celsius or Fahrenheit for the raw sensor unit.')
@@ -165,10 +176,10 @@ def validate(doc, previous):
             action = {'id': a['id'], 'type': a.get('type')}
             if a.get('type') == 'plug':
                 target = devices.get(a.get('device_id'))
-                if not target or target['kind'] != 'plug':
-                    raise ValueError('Choose an existing plug for each switch action.')
+                if not target or target['kind'] not in ('plug', 'dehumidifier'):
+                    raise ValueError('Choose an existing smart plug or dehumidifier for each power action.')
                 if rule['enabled'] and not target['enabled']:
-                    raise ValueError('Enable target plugs before enabling their automations.')
+                    raise ValueError('Enable target devices before enabling their automations.')
                 action.update(device_id=target['id'], on=flag(a, 'on'))
             elif a.get('type') == 'telegram':
                 action['message'] = text(a, 'message', 1000)
@@ -179,7 +190,7 @@ def validate(doc, previous):
             rule['actions'].append(action)
         targets = [a['device_id'] for a in rule['actions'] if a['type'] == 'plug']
         if len(targets) != len(set(targets)):
-            raise ValueError('Use one action per plug in an automation.')
+            raise ValueError('Use one power action per device in an automation.')
         if not rule['conditions'] or not rule['actions']:
             raise ValueError('Every automation needs at least one condition and action.')
         result['rules'].append(rule)

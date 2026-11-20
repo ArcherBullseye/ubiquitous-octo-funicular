@@ -13,6 +13,10 @@ DEVICE_METRICS = {
     'sensor': {'temperature_f': metric('Temperature (°F)', '°F', 40),
                'humidity_pct': metric('Humidity (%)', '%', 60)},
     'plug': {'power': metric('Power state', kind='boolean')},
+    'dehumidifier': {'power': metric('Power state', kind='boolean'),
+        'humidity_pct': metric('Room humidity (%)', '%', 60),
+        'target_humidity_pct': metric('Target humidity (%)', '%', 50),
+        'tank_full': metric('Tank full', kind='boolean')},
 }
 SOURCES = {
     'solar': dict(label='Solar, battery & power', metrics={
@@ -79,7 +83,13 @@ SOURCES['clock'] = dict(label='Clock', metrics={'time': metric('Local time windo
 
 
 def definitions(source, device=None):
-    return DEVICE_METRICS.get(device['kind'], {}) if device else SOURCES.get(source, {}).get('metrics', {})
+    if not device:
+        return SOURCES.get(source, {}).get('metrics', {})
+    result = dict(DEVICE_METRICS.get(device['kind'], {}))
+    for item in device.get('telemetry', []):
+        if item['kind'] != 'enum':
+            result[item['id']] = metric(item['label'] + (' ('+item['unit']+')' if item['unit'] else ''), item['unit'], kind=item['kind'])
+    return result
 
 
 def numeric(value):

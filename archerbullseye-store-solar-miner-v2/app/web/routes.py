@@ -3,7 +3,7 @@ external consumer (and the dashboard) keeps working across the upgrade.
 """
 import time
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, render_template, request, current_app
 
 from .. import config
 from ..clients.openmeteo import geocode as do_geocode
@@ -13,6 +13,8 @@ from ..db import (get_pv_efficiency, get_pv_efficiency_detail, get_ramp_log,
                   get_recent_readings, get_settings, reset_pv_efficiency,
                   update_settings)
 from ..devices.dehumidifier import Dehumidifier
+from ..home.ownership import legacy_owner
+from ..home.store import load_document
 from ..devices.miner import MinerFleet
 from ..localtime import local_now, local_today_str
 from ..poolstats import fetch_daily_sats_rows
@@ -219,6 +221,10 @@ def create_blueprint(state: AppState, fleet: MinerFleet) -> Blueprint:
 
     @bp.route("/api/dehum/test")
     def api_dehum_test():
+        owner = legacy_owner(load_document(), get_settings())
+        if owner:
+            home = current_app.extensions['home_service']
+            return jsonify(raw=home.snapshot().get(owner['id'], {}), managed_by='Home')
         dehum = Dehumidifier.from_settings(get_settings())
         if dehum is None:
             return jsonify({"error": "Not configured"}), 400
@@ -230,9 +236,16 @@ def create_blueprint(state: AppState, fleet: MinerFleet) -> Blueprint:
     @bp.route("/api/dehum/power", methods=["POST"])
     def api_dehum_power():
         on = (request.get_json(silent=True) or {}).get("on")
-        if on is None:
-            return jsonify({"error": "missing 'on' field"}), 400
+        if type(on) is not bool:
+            return jsonify(error='Choose ON or OFF.'), 400
         settings = get_settings()
+        owner = legacy_owner(load_document(), settings)
+        if owner:
+            try:
+                current_app.extensions['home_service'].command(owner['id'], on, origin='Dashboard manual control')
+            except ValueError as exc:
+                return jsonify(error=str(exc)), 400
+            return jsonify(ok=True, queued=True, managed_by='Home'), 202
         dehum = Dehumidifier.from_settings(settings)
         if dehum is None:
             return jsonify({"error": "Dehumidifier not configured"}), 400

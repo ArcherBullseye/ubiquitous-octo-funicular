@@ -160,3 +160,58 @@ after 1 hour. Home sensor/plug reports keep their existing 30-minute freshness
 window. Missing, invalid, or stale required readings pause a rule. Rules still
 establish a baseline on startup/reconnect; subsequent condition crossings run
 the actions. Manual plug holds and cooldowns continue to apply.
+
+### Dehumidifiers in Home
+
+Device type **Dehumidifier** supports Wi-Fi or a Zigbee hub connection, ON/OFF
+commands confirmed by a status read, room humidity, target humidity (read-only),
+and a boolean tank-full status. The Ivation mapping used by the existing
+integration is provided as editable defaults: power DP 1, room humidity 109,
+target humidity 3, tank full 111. Optional readings can be left blank. Unknown
+or missing readings remain unavailable rather than becoming zero or false.
+
+Dehumidifiers appear as action targets and condition sources in Home
+Automations. Existing power actions remain compatible when an imported device
+is changed from Smart plug to Dehumidifier; its ID and saved credentials stay
+intact. Tuya category `cs` is classified as a dehumidifier during discovery
+when a boolean power mapping is available; optional readings use account
+metadata without guessed DP numbers. Turning ON is rejected while a known
+tank-full report is active; OFF remains available.
+
+If an enabled Home Wi-Fi dehumidifier matches the dashboard device ID or IP,
+Home owns the connection. The original dashboard displays Home's reports and
+routes its ON/OFF buttons through Home, including its 15-minute manual hold.
+The older excess-solar controller pauses while Home owns that device, and its
+settings are retained. Use Home automation rules for automatic control. The
+legacy connection/controller remains available when no enabled Home device
+matches. No physical devices were operated during development verification.
+
+### Additional device measurements
+
+Home captures bounded numeric/boolean DP reports on each existing connection.
+The information button on a device card shows mapped readings, timestamps, and
+uninterpreted numeric/boolean reports. Refresh device report queues one status
+query on the current worker; it never switches power or opens another socket.
+Unknown strings, raw blobs, and nested payloads are excluded from diagnostics.
+
+Discover devices → Load account devices → Update configured-device measurements
+adds supported measurement mappings to existing devices. Connection credentials,
+IDs, device types, rules, and manual mappings are preserved. New imports also
+receive supported mappings. Automatic mappings require local support, a supported
+conversion, and explicit numeric scale/units. Unsupported readings stay absent.
+Manual mappings are available under Additional device readings in device setup.
+
+Supported measurements include watts, amps, volts, cumulative energy, energy
+increments, battery percentage, and additional numeric, boolean, and enum status
+readings from the device schema. Current in mA is converted to A; energy in Wh
+is converted to kWh. Tuya `add_ele` is an increment, never a cumulative total.
+Numeric and boolean mapped readings can be used in automation conditions. Enum
+readings are displayed read-only. Per-reading timestamps survive partial reports.
+
+Hardware capability is confirmed only after the update is installed and real
+reports are inspected. Development used simulated reports. The published
+Ivation IVADUWIFI50WP profile in make-all/tuya-local exposes temperatures, fan,
+compressor, defrost and fault status but uses different base DP assignments from
+this app's older dashboard defaults. Do not silently replace a user's mappings
+or label unknown numeric DPs as electrical measurements based on a similar model.
+Reference: https://github.com/make-all/tuya-local/blob/main/custom_components/tuya_local/devices/ivation_50pt_dehumidifier.yaml

@@ -12,6 +12,8 @@ import os
 import time
 from typing import Optional
 
+from ..home.ownership import legacy_owner
+from ..home.store import load_document
 from ..clients.solis import SolisApiError, SolisClient, parse_power_and_soc
 from ..db import (get_hourly_load_profile, get_pv_efficiency, get_settings,
                   save_reading, update_pv_efficiency)
@@ -306,7 +308,9 @@ class ControlLoop:
 
         # ── Dehumidifier auto control ────────────────────────────
         dehum = Dehumidifier.from_settings(settings)
-        if dehum is not None:
+        # An enabled Home dehumidifier owns its socket and its automations.
+        # Do not let the legacy excess-solar controller compete with it.
+        if dehum is not None and not legacy_owner(load_document(), settings):
             run_auto_control(dehum, settings, state, readings)
 
         # ── Publish state + persist the reading ──────────────────

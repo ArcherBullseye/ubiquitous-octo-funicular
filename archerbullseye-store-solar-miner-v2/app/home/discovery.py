@@ -6,19 +6,21 @@ import time
 import uuid
 
 from . import tuya_account
+from .telemetry import schema_readings, primary_dps
 from .lan_discovery import local_ip, network_range, scan_network
 from .store import ConflictError, load_document, save_document
 
 GATEWAYS = {'wgsxj', 'lyqwg', 'bywg', 'zigbee', 'wg2', 'dgnzk', 'videohub', 'xnwg', 'qtyycp', 'alexa_yywg', 'gywg', 'cnwg', 'wfcon'}
 TEMP_CODES = {'temp_current', 'va_temperature', 'prm_temperature'}
-HUMID_CODES = {'humidity_value', 'va_humidity', 'prm_content'}
+HUMID_CODES = {'humidity_value', 'va_humidity', 'prm_content', 'humidity_indoor', 'humidity_current'}
+TARGET_CODES = {'humidity_set', 'dehumidity_set_value'}
 
 
 def mapping(raw):
     if raw.get('product_id') == 'vtA4pDd6PLUZzXgZ':
         return 'sensor', dict(temperature_dp='103', humidity_dp='101', temperature_divisor=1,
                               humidity_divisor=1, temperature_unit='C')
-    metrics, switches, extra_switches = {}, [], False
+    metrics, switches, extra_switches, tank_dp = {}, [], False, ''
     for relation in raw.get('relations') or []:
         if relation.get('supportLocal') is not True:
             continue
@@ -34,7 +36,9 @@ def mapping(raw):
             extra_switches = True
         if code in ('switch', 'switch_1') and kind in ('bool', 'boolean'):
             switches.append(dp)
-        if code in TEMP_CODES | HUMID_CODES and kind in ('integer', 'value'):
+        if code in ('water_full', 'tank_full') and kind in ('bool', 'boolean'):
+            tank_dp = dp
+        if code in TEMP_CODES | HUMID_CODES | TARGET_CODES and kind in ('integer', 'value'):
             try:
                 desc = relation.get('valueDesc') or {}
                 desc = json.loads(desc) if isinstance(desc, str) else desc
@@ -44,9 +48,17 @@ def mapping(raw):
                 unit = str(desc.get('unit', '')).replace('°', '').replace('℃', 'C').replace('℉', 'F').upper()
                 if code in TEMP_CODES and unit not in ('C', 'F'):
                     continue
-                metrics['temperature' if code in TEMP_CODES else 'humidity'] = (dp, 10 ** scale, unit)
+                metrics['temperature' if code in TEMP_CODES else 'target' if code in TARGET_CODES else 'humidity'] = (dp, 10 ** scale, unit)
             except (ValueError, TypeError, AttributeError):
                 continue
+    if raw.get('category') == 'cs':
+        if len(switches) != 1 or extra_switches:
+            return None, {}
+        humidity = metrics.get('humidity', ('', 1, ''))
+        target = metrics.get('target', ('', 1, ''))
+        return 'dehumidifier', dict(power_dp=switches[0], humidity_dp=humidity[0],
+            humidity_divisor=humidity[1], target_humidity_dp=target[0],
+            target_humidity_divisor=target[1], tank_full_dp=tank_dp)
     if 'temperature' in metrics and 'humidity' in metrics:
         t, h = metrics['temperature'], metrics['humidity']
         return 'sensor', dict(temperature_dp=t[0], temperature_divisor=t[1], temperature_unit=t[2],
@@ -67,6 +79,9 @@ def catalog(raw_devices, lan, document):
         is_hub = device_id in gateway_ids
         child = bool(raw.get('sub') or raw.get('node_id')) and not is_hub
         kind, points = ('hub', {}) if is_hub else mapping(raw)
+        if not is_hub:
+            used = primary_dps(dict(kind=kind, **points))
+            points['telemetry'] = schema_readings(raw, used)
         parent = ''
         if child:
             explicit = raw.get('gateway_id') or raw.get('gatewayId') or raw.get('parent_id')
@@ -229,6 +244,35 @@ class DiscoveryService:
             self.candidates = []
             self.remember, self.phase = False, 'network_ready'
 
+    def update_measurements(self, data):
+        with self.lock:
+            self._expire()
+            if self.busy or not self.batch or data.get('batch') != self.batch:
+                raise ValueError('Load account devices again before updating measurements.')
+            doc = load_document()
+            if data.get('revision') != doc['revision']:
+                raise ConflictError('The workspace changed. Reload before updating measurements.')
+            available = {item['id']:item for item in self.candidates}
+            changed = 0
+            for device in doc['devices']:
+                candidate = available.get(device['device_id'])
+                if not candidate: continue
+                existing = {item['id']:item for item in device.get('telemetry', [])}
+                before = copy.deepcopy(existing)
+                for item in candidate.get('telemetry', []):
+                    if item['dp'] in primary_dps(device):
+                        continue
+                    if item['id'] not in existing or existing[item['id']].get('origin') == 'tuya':
+                        existing[item['id']] = item
+                if existing != before:
+                    device['telemetry'] = list(existing.values())
+                    changed += 1
+            if not changed:
+                raise ValueError('No additional measurement mappings were found. Existing manual mappings were preserved.')
+            saved = save_document(doc)
+            self.state.home_refresh.set()
+            return saved, changed
+
     def import_devices(self, data):
         if not isinstance(data, dict) or not isinstance(data.get('items'), list) or not 1 <= len(data['items']) <= 200:
             raise ValueError('Select the devices to import.')
@@ -285,6 +329,11 @@ class DiscoveryService:
                         hub_id='', power_dp=item.get('power_dp', '1'), temperature_dp=item.get('temperature_dp', '103'),
                         humidity_dp=item.get('humidity_dp', '101'), temperature_divisor=item.get('temperature_divisor', 1),
                         humidity_divisor=item.get('humidity_divisor', 1), temperature_unit=item.get('temperature_unit', 'C'))
+                    row['telemetry'] = item.get('telemetry', [])
+                    if item['kind'] == 'dehumidifier':
+                        row.update(target_humidity_dp=item.get('target_humidity_dp', ''),
+                                   target_humidity_divisor=item.get('target_humidity_divisor', 1),
+                                   tank_full_dp=item.get('tank_full_dp', ''))
                     if item['transport'] == 'zigbee':
                         hub = known_hubs.get(item['hub_device_id'])
                         row['hub_id'] = hub['id'] if hub else ''

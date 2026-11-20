@@ -3,12 +3,33 @@
 const home = {document: null, readings: {}, events: [], view: 'devices', selected: null, dirty: false, drag: null, dialog: null, sources: {}, deviceMetrics: {}, dashboard: {}};
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function formatDeviceValue(value, unit='') {
+  if (value == null) return '—';
+  if (typeof value === 'boolean') return value ? 'True' : 'False';
+  return (typeof value === 'number' ? value.toLocaleString(undefined,{maximumFractionDigits:4}) : String(value)) + (unit ? ' '+unit : '');
+}
+function deviceTelemetrySummary(device,row) {
+  const items=(device.telemetry || []).filter(item=>['power_w','current_a','voltage_v','energy_kwh','energy_increment_kwh','battery_pct'].includes(item.id));
+  if (!items.length) return '';
+  return `<div class="device-telemetry">${items.map(item=>`<div><small>${esc(item.label)}</small><strong>${esc(formatDeviceValue(row[item.id],item.unit))}</strong></div>`).join('')}</div>`;
+}
+function telemetryFields(device) {
+  const existing=new Map((device.telemetry || []).map(item=>[item.id,item]));
+  const ids=[...new Set([...Object.keys(TELEMETRY_PRESETS),...existing.keys()])];
+  return '<details><summary>Additional device readings</summary><p class="dialog-hint">Load your Tuya account devices, then use Update configured-device measurements to discover supported readings and units. Manual mappings require the verified DP and scale. Leave unavailable readings blank.</p>'+ids.map(id=>{
+    const item=existing.get(id), preset=TELEMETRY_PRESETS[id];
+    const label=item?.label || preset[0],unit=item?.unit ?? preset[1];
+    return `<div class="telemetry-edit-row"><strong>${esc(label)}${unit ? ` (${esc(unit)})` : ''}</strong><div class="fields-row">${field('telemetry_dp__'+id,'Data point ID',item?.dp || '')}${field('telemetry_divisor__'+id,'Raw reading divisor',item?.divisor || 1,'number','step="any" min="0.000001"')}</div><small class="hint">${item?.kind === 'enum' ? 'Supported enum values come from the device schema.' : `Raw value ÷ divisor${unit ? ' = '+esc(unit) : ''}.`}</small></div>`;
+  }).join('')+'</details>';
+}
+
 function uid(prefix) {
   // getRandomValues also works on the HTTP LAN address used by Umbrel.
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return prefix + '-' + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
+const TELEMETRY_PRESETS = {power_w:['Power draw','W'],current_a:['Current','A'],voltage_v:['Voltage','V'],energy_kwh:['Energy total','kWh'],energy_increment_kwh:['Last energy increment','kWh'],battery_pct:['Battery','%']};
 const selectedRule = () => home.document.rules.find(r => r.id === home.selected);
 const deviceName = id => home.document.devices.find(d => d.id === id)?.name || id;
 
@@ -44,16 +65,31 @@ function ageLabel(iso) {
   return Math.floor(age / 3600) + 'h ago';
 }
 function freshness(d, row) {
-  const metrics = d.kind === 'plug' ? ['power'] : ['temperature_f','humidity_pct'];
+  const metrics = d.kind === 'dehumidifier' ? ['power','humidity_pct'] : d.kind === 'plug' ? ['power'] : ['temperature_f','humidity_pct'];
   const dates = metrics.map(m => Date.parse(row.updated_at?.[m]));
   if (!dates.some(Number.isFinite)) return {style:'', text:'No report yet'};
   const oldest = Math.min(...dates);
-  const fresh = dates.every(Number.isFinite) && Date.now() - oldest < 1800000 && row.status === 'connected';
+  const fresh = dates.every(Number.isFinite) && Date.now() - oldest < (row.max_age_seconds || 1800)*1000 && row.status === 'connected';
   const stamp = dates.filter(Number.isFinite).sort((a,b) => a-b)[0];
   return {style:fresh ? 'fresh' : 'old', text: row.status === 'offline' ? 'Connection offline' : ageLabel(new Date(stamp).toISOString())};
 }
+function deviceIconStatus(device, row, now = Date.now()) {
+  if (!device.enabled) return {style:'status-unknown', text:'Device disabled'};
+  const maxAge = (row.max_age_seconds || (device.kind === 'dehumidifier' ? 300 : 1800))*1000;
+  const reports = [...Object.values(row.updated_at || {}),row.last_report_at].map(Date.parse).filter(Number.isFinite);
+  const latest = reports.length ? Math.max(...reports) : NaN;
+  if (row.status !== 'connected' || !Number.isFinite(latest) || now-latest < 0 || now-latest > maxAge) {
+    return {style:'status-offline', text:'No current communication · power state unconfirmed'};
+  }
+  if (device.kind === 'sensor') return {style:'status-on', text:'In communication'};
+  const powerStamp = Date.parse(row.updated_at?.power);
+  if (typeof row.power !== 'boolean' || !Number.isFinite(powerStamp) || now-powerStamp < 0 || now-powerStamp > maxAge) {
+    return {style:'status-unknown', text:'In communication · waiting for confirmed power state'};
+  }
+  return row.power ? {style:'status-on', text:'In communication · ON'} : {style:'status-off', text:'In communication · OFF'};
+}
 function itemButtons(id, kind, index, length) {
-  return `<div class="mini-buttons"><button data-action="move-${kind}" data-id="${esc(id)}" data-direction="-1" ${index === 0 ? 'disabled' : ''} aria-label="Move earlier">↑</button><button data-action="move-${kind}" data-id="${esc(id)}" data-direction="1" ${index === length-1 ? 'disabled' : ''} aria-label="Move later">↓</button><button data-action="edit-${kind}" data-id="${esc(id)}" aria-label="Edit ${kind}">⚙</button></div>`;
+  return `<div class="mini-buttons"><button data-action="move-${kind}" data-id="${esc(id)}" data-direction="-1" ${index === 0 ? 'disabled' : ''} aria-label="Move earlier">↑</button><button data-action="move-${kind}" data-id="${esc(id)}" data-direction="1" ${index === length-1 ? 'disabled' : ''} aria-label="Move later">↓</button><button data-action="device-info" data-id="${esc(id)}" ${kind !== 'device' ? 'hidden' : ''} aria-label="Device information">ⓘ</button><button data-action="edit-${kind}" data-id="${esc(id)}" aria-label="Edit ${kind}">⚙</button></div>`;
 }
 function renderDevices() {
   const devices = home.document.devices;
@@ -62,6 +98,7 @@ function renderDevices() {
   $('devices-grid').innerHTML = devices.length ? devices.map((d, i) => {
     const row = home.readings[d.id] || {};
     const freshnessInfo = freshness(d, row);
+    const iconStatus = deviceIconStatus(d, row);
     const hub = home.document.hubs.find(h => h.id === d.hub_id);
     const meta = d.transport === 'zigbee' ? `Zigbee · ${hub?.name || 'Choose a hub'}` : 'Wi-Fi · Local Tuya';
     const temp = row.temperature_f == null ? '—' : row.temperature_f.toFixed(1);
@@ -69,13 +106,15 @@ function renderDevices() {
     const pending = row.pending || home.dirty || !d.enabled;
     const held = row.hold_until * 1000 > Date.now();
     return `<article class="device-card" data-drag="device" data-id="${esc(d.id)}">
-      <div class="card-top"><span class="device-symbol ${d.kind}" data-handle="true" title="Drag to arrange">${d.kind === 'plug' ? '⏻' : '♧'}</span>${itemButtons(d.id,'device',i,devices.length)}</div>
+      <div class="card-top"><span class="device-symbol ${d.kind} ${iconStatus.style}" data-handle="true" role="img" aria-label="${esc(iconStatus.text)}" title="${esc(iconStatus.text)} · Drag to arrange">${d.kind === 'dehumidifier' ? '♨' : d.kind === 'plug' ? '⏻' : '♧'}</span>${itemButtons(d.id,'device',i,devices.length)}</div>
       <h4>${esc(d.name)}</h4><div class="device-meta">${esc(meta)}</div>
       <div class="device-readings">${d.kind === 'sensor' ? `<div><div class="reading-label">Temperature</div><div class="reading-value">${temp}<small>°F</small></div></div><div><div class="reading-label">Humidity</div><div class="reading-value">${humidity}<small>%</small></div></div>` : `<div><div class="reading-label">Power</div><div class="reading-value">${row.power == null ? '—' : row.power ? 'On' : 'Off'}</div></div><div class="power-controls"><button class="${row.power === true ? 'on' : ''}" data-action="power" data-id="${esc(d.id)}" data-on="true" ${pending ? 'disabled' : ''}>ON</button><button data-action="power" data-id="${esc(d.id)}" data-on="false" ${pending ? 'disabled' : ''}>OFF</button></div>`}</div>
-      ${row.pending ? '<div class="held">Waiting for plug confirmation…</div>' : ''}
+      ${d.kind === 'dehumidifier' ? `<div class="dehum-readings"><div><small>Humidity</small><strong>${humidity}%</strong></div><div><small>Target</small><strong>${row.target_humidity_pct == null ? '—' : row.target_humidity_pct.toFixed(0)+'%'}</strong></div><div><small>Tank</small><strong class="${row.tank_full === true ? 'error' : ''}">${row.tank_full == null ? '—' : row.tank_full ? 'Full' : 'OK'}</strong></div></div>` : ''}
+      ${deviceTelemetrySummary(d,row)}
+      ${row.pending ? '<div class="held">Waiting for device confirmation…</div>' : ''}
       ${held ? `<div class="held">Manual hold · ${Math.ceil((row.hold_until*1000-Date.now())/60000)}m <button data-action="resume" data-id="${esc(d.id)}">Resume rules</button></div>` : ''}
       ${row.command_error ? `<div class="device-error">${esc(row.command_error)}</div>` : ''}
-      <div class="card-bottom"><span><i class="fresh-dot ${freshnessInfo.style}"></i>${d.enabled ? esc(freshnessInfo.text) : 'Disabled'}</span><span>${d.kind === 'plug' ? '15m hold on manual control' : 'Drag to arrange'}</span></div>
+      <div class="card-bottom"><span><i class="fresh-dot ${freshnessInfo.style}"></i>${d.enabled ? esc(freshnessInfo.text) : 'Disabled'}</span><span>${d.kind !== 'sensor' ? '15m hold on manual control' : 'Drag to arrange'}</span></div>
     </article>`;
   }).join('') : '<div class="empty-state"><h3>Your Home starts here.</h3>Add your hub, then sensors and smart plugs. Each device gets its own card.<br><button class="primary" data-action="new-device">＋ Add your first device</button></div>';
   $('hubs-list').innerHTML = home.document.hubs.map(h => `<div class="hub-row"><div><strong>${esc(h.name)}</strong><p>${esc(h.address || 'Connection details needed')} · ${h.enabled ? 'Enabled' : 'Disabled'} · ${devices.filter(d => d.hub_id === h.id).length} devices</p></div><button data-action="edit-hub" data-id="${esc(h.id)}">Configure</button></div>`).join('') || '<div class="empty-state">Using Zigbee? Add the G08Pro hub once, then select it for each paired device.</div>';
@@ -102,7 +141,7 @@ function openDevice(kind, id) {
   const current = home.document[collection].find(d => d.id === id);
   const defaults = {
     id:uid(kind), name:'', enabled:false, kind:'plug', transport:'zigbee', hub_id:home.document.hubs[0]?.id || '',
-    address:'', device_id:'', local_key:'', version:3.4, node_id:'', temperature_dp:'103', humidity_dp:'101', power_dp:'1', temperature_divisor:1, humidity_divisor:1, temperature_unit:'C'
+    address:'', device_id:'', local_key:'', version:3.4, node_id:'', temperature_dp:'103', humidity_dp:'101', power_dp:'1', temperature_divisor:1, humidity_divisor:1, temperature_unit:'C', target_humidity_dp:'3', target_humidity_divisor:1, tank_full_dp:'111'
   };
   home.dialog = {collection, existing:!!current, value:structuredClone({...defaults, ...current})};
   renderDeviceForm();
@@ -111,10 +150,27 @@ function openDevice(kind, id) {
 function readDeviceForm() {
   const value = home.dialog.value;
   new FormData($('device-form')).forEach((entry,key) => {
+    if (key.startsWith('telemetry_')) return;
     const input = $('device-form').elements.namedItem(key);
     value[key] = input.type === 'number' || key === 'version' ? Number(entry) : entry;
   });
   value.enabled = $('device-form').elements.namedItem('enabled').checked;
+  if (home.dialog.collection === 'devices') {
+    const existing = new Map((value.telemetry || []).map(item=>[item.id,item]));
+    const ids = new Set([...Object.keys(TELEMETRY_PRESETS),...existing.keys()]);
+    for (const id of ids) {
+      const input = $('device-form').elements.namedItem('telemetry_dp__'+id);
+      if (!input) continue;
+      const dp = input.value.trim();
+      if (!dp) {existing.delete(id); continue;}
+      const divisor = Number($('device-form').elements.namedItem('telemetry_divisor__'+id).value);
+      const prior = existing.get(id);
+      const preset = TELEMETRY_PRESETS[id];
+      existing.set(id,{...(prior || {id,label:preset[0],unit:preset[1],kind:'number'}),dp,divisor,
+        origin:prior && prior.dp === dp && prior.divisor === divisor ? prior.origin : 'manual'});
+    }
+    value.telemetry = [...existing.values()];
+  }
 }
 function renderDeviceForm() {
   const d = home.dialog.value;
@@ -122,7 +178,8 @@ function renderDeviceForm() {
   $('device-dialog-title').textContent = (home.dialog.existing ? 'Configure ' : 'Add ') + (hub ? 'hub' : 'device');
   $('device-form-error').textContent = '';
   let fields = field('name','Name',d.name,'text','required maxlength="120"') + `<label class="toggle-label"><input name="enabled" type="checkbox" ${d.enabled ? 'checked' : ''}> Enable this ${hub ? 'hub' : 'device'}</label>`;
-  if (!hub) fields += '<div class="fields-row">' + selectField('kind','Device type',[['plug','Smart plug'],['sensor','Temperature / humidity sensor']],d.kind) + selectField('transport','Connection',[['zigbee','Zigbee through hub'],['wifi','Wi-Fi Tuya device']],d.transport) + '</div>';
+  if (!hub) fields += '<div class="fields-row">' + selectField('kind','Device type',[['plug','Smart plug'],['sensor','Temperature / humidity sensor'],['dehumidifier','Dehumidifier']],d.kind) + selectField('transport','Connection',[['zigbee','Zigbee through hub'],['wifi','Wi-Fi Tuya device']],d.transport) + '</div>';
+  if (!hub && d.kind === 'dehumidifier') fields += '<p class="dialog-hint">Home manages this device. If it matches the dashboard dehumidifier, dashboard ON/OFF uses Home and the old excess-solar controller pauses. Set up automatic control in Home automations.</p>';
   if (hub || d.transport === 'wifi') {
     fields += field('address','LAN IP address',d.address,'text','placeholder="192.168.88.…"');
     fields += field('device_id','Tuya device ID',d.device_id);
@@ -130,22 +187,28 @@ function renderDeviceForm() {
     fields += selectField('version','Tuya protocol',[[3.3,'3.3'],[3.4,'3.4'],[3.5,'3.5']],d.version);
   } else {
     fields += selectField('hub_id','Hub',[['','Choose a hub'],...home.document.hubs.map(h => [h.id,h.name])],d.hub_id);
-    fields += field('device_id','Sensor / plug Tuya device ID',d.device_id);
+    fields += field('device_id','Tuya device ID',d.device_id);
     fields += field('node_id','Zigbee node ID',d.node_id);
     fields += '<p class="dialog-hint">Pair the device to your hub in Smart Life first. Enter the IDs assigned to this device.</p>';
   }
   if (!hub) {
     fields += '<details><summary>Data point mapping</summary><p class="dialog-hint">Use the mapping for this model. Sensor defaults match the TH02 Z3-P3Z. Plug power must be a boolean switch data point.</p>';
-    if (d.kind === 'plug') fields += field('power_dp','Power switch data point',d.power_dp);
+    if (d.kind === 'dehumidifier') fields += '<p class="dialog-hint">Legacy dashboard defaults: power 1, humidity 109, target 3, tank full 111. Verify these for your unit and firmware; leave optional readings blank if unavailable.</p>'+field('power_dp','Power switch data point',d.power_dp)+'<div class="fields-row">'+field('humidity_dp','Current humidity DP (optional)',d.humidity_dp)+field('humidity_divisor','Humidity divisor',d.humidity_divisor,'number','step="any" min="0.001"')+'</div><div class="fields-row">'+field('target_humidity_dp','Target humidity DP (optional)',d.target_humidity_dp)+field('target_humidity_divisor','Target humidity divisor',d.target_humidity_divisor,'number','step="any" min="0.001"')+'</div>'+field('tank_full_dp','Tank full boolean DP (optional)',d.tank_full_dp)+'<p class="dialog-hint">When this matches the dashboard dehumidifier, Home manages its connection and automations. Dashboard ON/OFF buttons use Home; the old excess-solar mode is paused.</p>';
+    else if (d.kind === 'plug') fields += field('power_dp','Power switch data point',d.power_dp);
     else fields += '<div class="fields-row">'+field('temperature_dp','Temperature DP',d.temperature_dp)+field('temperature_divisor','Temperature divisor',d.temperature_divisor,'number','step="any" min="0.001"')+'</div><div class="fields-row">'+field('humidity_dp','Humidity DP',d.humidity_dp)+field('humidity_divisor','Humidity divisor',d.humidity_divisor,'number','step="any" min="0.001"')+'</div>'+selectField('temperature_unit','Raw temperature unit',[['C','Celsius'],['F','Fahrenheit']],d.temperature_unit);
-    fields += '</details>';
+    fields += '</details>' + telemetryFields(d);
   }
   if (home.dialog.existing) fields += `<button type="button" class="danger" data-action="delete-dialog-item">Remove ${hub ? 'hub' : 'device'}</button>`;
   $('device-fields').innerHTML = fields;
 }
 function metricDefinitions(source) {
   const device = home.document.devices.find(d => d.id === source);
-  return device ? home.deviceMetrics[device.kind] || {} : home.sources[source]?.metrics || {};
+  if (!device) return home.sources[source]?.metrics || {};
+  const definitions={...(home.deviceMetrics[device.kind] || {})};
+  for (const item of device.telemetry || []) {
+    if (item.kind !== 'enum') definitions[item.id]={label:item.label+(item.unit ? ` (${item.unit})` : ''),unit:item.unit,kind:item.kind,default:0};
+  }
+  return definitions;
 }
 function metricDefinition(source, metric) { return metricDefinitions(source)[metric] || {kind:'number',default:0}; }
 function metricOptions(source) {
@@ -158,25 +221,27 @@ function defaultCondition(source, metric, operator) {
 }
 function newCondition(kind = 'temperature') {
   const sensor = home.document.devices.find(d => d.kind === 'sensor');
-  const plug = home.document.devices.find(d => d.kind === 'plug');
-  if (kind === 'power' && !plug) { notice('Add a smart plug first.',true); return null; }
-  if ((kind === 'temperature' || kind === 'humidity') && !sensor) { notice('Add a sensor first.',true); return null; }
+  const humiditySource = home.document.devices.find(d => d.kind === 'sensor' || d.kind === 'dehumidifier');
+  const plug = home.document.devices.find(d => d.kind === 'plug' || d.kind === 'dehumidifier');
+  if (kind === 'power' && !plug) { notice('Add a smart plug or dehumidifier first.',true); return null; }
+  if (kind === 'temperature' && !sensor) { notice('Add a temperature sensor first.',true); return null; }
+  if (kind === 'humidity' && !humiditySource) { notice('Add a humidity sensor or dehumidifier first.',true); return null; }
   const choices = {time:['clock','time'],soc:['solar','soc','at_least'],excess:['solar','excess_power_w','at_least'],
     solar:['solar','input_power_w'],dashboard:['dashboard:weather','current_temp_f'],
-    power:[plug?.id,'power'],temperature:[sensor?.id,'temperature_f'],humidity:[sensor?.id,'humidity_pct']};
+    power:[plug?.id,'power'],temperature:[sensor?.id,'temperature_f'],humidity:[humiditySource?.id,'humidity_pct']};
   return defaultCondition(...choices[kind]);
 }
 function newAction(kind) {
   if (kind === 'plug' || kind === 'plug-on' || kind === 'plug-off') {
-    const plug = home.document.devices.find(d => d.kind === 'plug');
-    if (!plug) { notice('Add a smart plug first.',true); return null; }
-    return {id:uid('action'),type:'plug',device_id:plug.id,on:kind !== 'plug-off'};
+    const plug = home.document.devices.find(d => d.kind === 'plug' || d.kind === 'dehumidifier');
+    if (!plug) { notice('Add a smart plug or dehumidifier first.',true); return null; }
+    return {id:uid('action'),type:'plug',device_id:plug.id,on:!kind.endsWith('-off')};
   }
   return {id:uid('action'),type:'telegram',message:'Home automation conditions matched.'};
 }
 function solarPlugPair() {
-  const plug = home.document.devices.find(d => d.kind === 'plug');
-  if (!plug) { notice('Add or import a smart plug first.',true); return; }
+  const plug = home.document.devices.find(d => d.kind === 'plug' || d.kind === 'dehumidifier');
+  if (!plug) { notice('Add or import a smart plug or dehumidifier first.',true); return; }
   const make = (on, match, soc, watts, seconds) => ({id:uid('rule'),name:`${plug.name} · solar ${on ? 'ON' : 'OFF'}`,enabled:false,
     match,for_seconds:seconds,cooldown_seconds:60,
     conditions:[{...defaultCondition('solar','soc',on ? 'at_least' : 'at_most'),value:soc},
@@ -184,7 +249,7 @@ function solarPlugPair() {
     actions:[{id:uid('action'),type:'plug',device_id:plug.id,on}]});
   const on = make(true,'all',95,1000,60), off = make(false,'any',90,0,30);
   home.document.rules.push(on,off); home.selected=on.id; changed(); showView('automations');
-  notice('Created two paused rules. Choose the plug and thresholds in both, then enable and save them.');
+  notice('Created two paused rules. Choose the device and thresholds in both, then enable and save them.');
 }
 function liveCondition(c) {
   if (c.source === 'clock') return `Uses ${esc(home.document.timezone || 'America/Detroit')}`;
@@ -216,7 +281,7 @@ function conditionBlock(c, index, length) {
 }
 function actionBlock(a, index, length) {
   const attrs = `data-block="${esc(a.id)}" data-kind="actions"`;
-  return `<div class="rule-block action" data-drag="actions" data-id="${esc(a.id)}">${blockControls(a.id,'actions',index,length)}<strong>${a.type === 'telegram' ? 'Telegram message' : a.on ? 'Turn plug ON' : 'Turn plug OFF'}</strong>${a.type === 'telegram' ? `<textarea aria-label="Telegram message" ${attrs} data-key="message" maxlength="1000">${esc(a.message)}</textarea>` : `<select aria-label="Target plug" ${attrs} data-key="device_id">${options(home.document.devices.filter(d => d.kind === 'plug').map(d => [d.id,d.name]),a.device_id)}</select><select aria-label="Plug action" ${attrs} data-key="on">${options([['true','Turn ON'],['false','Turn OFF']],String(a.on))}</select>`}</div>`;
+  return `<div class="rule-block action" data-drag="actions" data-id="${esc(a.id)}">${blockControls(a.id,'actions',index,length)}<strong>${a.type === 'telegram' ? 'Telegram message' : 'Turn ' + (home.document.devices.find(d => d.id === a.device_id)?.kind === 'dehumidifier' ? 'dehumidifier' : 'plug') + (a.on ? ' ON' : ' OFF')}</strong>${a.type === 'telegram' ? `<textarea aria-label="Telegram message" ${attrs} data-key="message" maxlength="1000">${esc(a.message)}</textarea>` : `<select aria-label="Target device" ${attrs} data-key="device_id">${options(home.document.devices.filter(d => d.kind === 'plug' || d.kind === 'dehumidifier').map(d => [d.id,d.name]),a.device_id)}</select><select aria-label="Power action" ${attrs} data-key="on">${options([['true','Turn ON'],['false','Turn OFF']],String(a.on))}</select>`}</div>`;
 }
 function renderRulesList() {
   $('rule-count').textContent = home.document.rules.length;
@@ -228,7 +293,7 @@ function renderRules() {
   const r = selectedRule();
   if (!r) { $('rule-editor').innerHTML = '<div class="empty-state"><h3>Build your first automation.</h3>Turn a plug on when the battery is full and excess power is available, turn it off when power drops, or send Telegram alerts.<br><button class="primary" data-action="new-rule">＋ New automation</button></div>'; return; }
   $('rule-editor').innerHTML = `<div class="rule-title"><input aria-label="Automation name" data-rule-key="name" value="${esc(r.name)}" maxlength="120"><label class="toggle-label"><input type="checkbox" data-rule-key="enabled" ${r.enabled ? 'checked' : ''}>Enabled</label></div><p class="rule-intro">Drag blocks below, or click them to add. Rules run after saving. The first fresh reading sets the baseline; a later crossing runs the actions.</p>
-    <div class="builder-palette"><span>CONDITIONS</span>${[['soc','Battery SOC'],['excess','Excess power'],['solar','Solar & power'],['dashboard','Dashboard reading'],['temperature','Temperature'],['humidity','Humidity'],['power','Plug state'],['time','Time window']].map(([id,label]) => `<button class="palette-block" data-handle="true" data-palette="${id}" data-kind="conditions" data-action="add-palette">＋ ${label}</button>`).join('')}<span>ACTIONS</span>${[['plug-on','Turn plug ON'],['plug-off','Turn plug OFF'],['telegram','Telegram']].map(([id,label]) => `<button class="palette-block" data-handle="true" data-palette="${id}" data-kind="actions" data-action="add-palette">＋ ${label}</button>`).join('')}</div>
+    <div class="builder-palette"><span>CONDITIONS</span>${[['soc','Battery SOC'],['excess','Excess power'],['solar','Solar & power'],['dashboard','Dashboard reading'],['temperature','Temperature'],['humidity','Humidity'],['power','Device power'],['time','Time window']].map(([id,label]) => `<button class="palette-block" data-handle="true" data-palette="${id}" data-kind="conditions" data-action="add-palette">＋ ${label}</button>`).join('')}<span>ACTIONS</span>${[['plug-on','Turn device ON'],['plug-off','Turn device OFF'],['telegram','Telegram']].map(([id,label]) => `<button class="palette-block" data-handle="true" data-palette="${id}" data-kind="actions" data-action="add-palette">＋ ${label}</button>`).join('')}</div>
     <div class="flow-section drop-zone" data-drop="conditions"><div class="flow-heading"><span class="step-title">WHEN</span><label class="toggle-label">Match <select aria-label="Match conditions" data-rule-key="match">${options([['all','all conditions'],['any','any condition']],r.match)}</select></label></div>${r.conditions.map((c,i) => conditionBlock(c,i,r.conditions.length)).join('')}<button class="add-block" data-action="add-condition">＋ Add condition</button></div>
     <div class="flow-arrow" aria-hidden="true">↓</div>
     <div class="flow-section drop-zone" data-drop="actions"><div class="flow-heading"><span class="step-title">THEN · ACTIONS</span></div>${r.actions.map((a,i) => actionBlock(a,i,r.actions.length)).join('')}<button class="add-block" data-action="add-action">＋ Add action</button></div>
@@ -276,6 +341,7 @@ async function refresh() {
 async function handleAction(button) {
   const action = button.dataset.action;
   const id = button.dataset.id;
+  if (action === 'device-info' || action.startsWith('device-info-')) return deviceInfoAction(button);
   if (action === 'discover' || action.startsWith('discovery-')) return discoveryAction(button);
   if (action === 'new-device' || action === 'new-hub') return openDevice(action === 'new-hub' ? 'hub' : 'device');
   if (action === 'edit-device' || action === 'edit-hub') return openDevice(action === 'edit-hub' ? 'hub' : 'device',id);
@@ -291,7 +357,7 @@ async function handleAction(button) {
   if (action === 'solar-plug-pair') return solarPlugPair();
   if (action === 'new-rule') {
     const condition = newCondition('soc');
-    const rule = {id:uid('rule'),name:'New automation',enabled:false,match:'all',conditions:[condition],actions:[newAction(home.document.devices.some(d => d.kind === 'plug') ? 'plug-on' : 'telegram')],for_seconds:0,cooldown_seconds:60};
+    const rule = {id:uid('rule'),name:'New automation',enabled:false,match:'all',conditions:[condition],actions:[newAction(home.document.devices.some(d => d.kind === 'plug' || d.kind === 'dehumidifier') ? 'plug-on' : 'telegram')],for_seconds:0,cooldown_seconds:60};
     home.document.rules.push(rule); home.selected = rule.id; changed(); showView('automations'); return;
   }
   if (action === 'select-rule') { home.selected = id; renderRules(); return; }
@@ -301,7 +367,7 @@ async function handleAction(button) {
   }
   if (action === 'add-palette') return addBlock(button.dataset.kind,button.dataset.palette);
   if (action === 'add-condition') return addBlock('conditions','soc');
-  if (action === 'add-action') return addBlock('actions',home.document.devices.some(d => d.kind === 'plug') ? 'plug-on' : 'telegram');
+  if (action === 'add-action') return addBlock('actions',home.document.devices.some(d => d.kind === 'plug' || d.kind === 'dehumidifier') ? 'plug-on' : 'telegram');
   if (action === 'remove-block') { const r=selectedRule(); r[button.dataset.kind]=r[button.dataset.kind].filter(b => b.id !== id); changed(); renderRules(); return; }
   if (action === 'move-block') { move(selectedRule()[button.dataset.kind],id,button.dataset.direction); renderRules(); return; }
   if (action === 'preview-rule') {
@@ -329,7 +395,14 @@ $('save-workspace').addEventListener('click',async () => {
   } catch(error) { notice(error.message,true); $('save-workspace').disabled=false; }
 });
 $('device-form').addEventListener('change',event => {
-  if (['kind','transport'].includes(event.target.name)) { readDeviceForm(); renderDeviceForm(); }
+  if (['kind','transport'].includes(event.target.name)) {
+    const previous = home.dialog.value.kind;
+    readDeviceForm();
+    if (event.target.name === 'kind' && home.dialog.value.kind === 'dehumidifier' && previous !== 'dehumidifier') {
+      Object.assign(home.dialog.value,{transport:'wifi',humidity_dp:'109',humidity_divisor:1,target_humidity_dp:'3',target_humidity_divisor:1,tank_full_dp:'111'});
+    }
+    renderDeviceForm();
+  }
 });
 $('device-form').addEventListener('submit',event => {
   event.preventDefault(); readDeviceForm();
@@ -359,7 +432,7 @@ function updateRuleInput(event) {
   if (key === 'operator' && metricDefinition(block.source,block.metric).kind !== 'time' && ['between','outside'].includes(block.operator) && !(Number(block.end) > Number(block.value))) block.end=Number(block.value)+10;
 
   changed();
-  if (key === 'source' || key === 'metric' || key === 'operator' || key === 'on') renderRules();
+  if (key === 'source' || key === 'metric' || key === 'operator' || key === 'on' || key === 'device_id') renderRules();
 
 }
 document.addEventListener('input', event => {

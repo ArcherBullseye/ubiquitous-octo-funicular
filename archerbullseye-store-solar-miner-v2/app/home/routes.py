@@ -33,6 +33,21 @@ def create_home_blueprint(service, state, discovery=None):
         state.home_refresh.set()
         return jsonify(document=public_document(doc))
 
+    @bp.get('/api/home/devices/<device_id>/info')
+    def device_info(device_id):
+        try:
+            return jsonify(service.device_info(device_id))
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 404
+
+    @bp.post('/api/home/devices/<device_id>/refresh')
+    def refresh_device(device_id):
+        try:
+            service.refresh_device(device_id)
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        return jsonify(queued=True), 202
+
     @bp.post('/api/home/devices/<device_id>/power')
     def power(device_id):
         data = request.get_json() or {}
@@ -87,6 +102,9 @@ def create_home_blueprint(service, state, discovery=None):
                 discovery.sync()
             elif operation == 'disconnect':
                 discovery.disconnect()
+            elif operation == 'measurements':
+                doc, changed = discovery.update_measurements(data)
+                return jsonify(document=public_document(doc), updated=changed)
             elif operation == 'import':
                 doc, count, disabled = discovery.import_devices(data)
                 return jsonify(document=public_document(doc), imported=count, disabled=disabled)
