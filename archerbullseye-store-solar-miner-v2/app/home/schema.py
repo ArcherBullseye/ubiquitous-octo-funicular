@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 MASK = '••••'
 from .metrics import definitions
 from .telemetry import validate_telemetry
+from .groups import GROUP_ICONS
 
 NUMERIC_OPERATORS = ('below', 'above', 'at_most', 'at_least', 'equals', 'between', 'outside')
 
@@ -74,7 +75,18 @@ def validate(doc, previous):
         ZoneInfo(timezone)
     except (ZoneInfoNotFoundError, ValueError):
         raise ValueError('Enter a valid timezone, such as America/Detroit.') from None
-    result = {'revision': previous['revision'], 'timezone': timezone, 'hubs': [], 'devices': [], 'rules': []}
+    result = {'revision': previous['revision'], 'timezone': timezone, 'hubs': [], 'devices': [], 'rules': [], 'groups': []}
+    group_source = dict(doc, groups=doc.get('groups', previous.get('groups', [])))
+    for row in rows(group_source, 'groups', 50):
+        name = text(row, 'name', 80)
+        icon = text(row, 'icon', 24) or 'folder'
+        if not name:
+            raise ValueError('Give every automation group a name.')
+        if icon not in GROUP_ICONS:
+            raise ValueError('Choose a supported automation group icon.')
+        result['groups'].append(dict(id=row['id'], name=name, icon=icon))
+    group_ids = {group['id'] for group in result['groups']}
+    previous_rules = {rule['id']:rule for rule in previous.get('rules', [])}
     for kind in ('hubs', 'devices'):
         old = {row['id']: row for row in previous[kind]}
         for row in rows(doc, kind, 100):
@@ -138,6 +150,16 @@ def validate(doc, previous):
         rule = {'id': row['id'], 'name': text(row, 'name'), 'enabled': flag(row, 'enabled'), 'match': row.get('match', 'all')}
         if not rule['name'] or rule['match'] not in ('all', 'any'):
             raise ValueError('Name the automation and choose all or any conditions.')
+        group_id = text(row, 'group_id', 80) if 'group_id' in row else previous_rules.get(row['id'], {}).get('group_id', '')
+        if group_id and group_id not in group_ids:
+            raise ValueError('Choose an existing automation group, or Ungrouped.')
+        if group_id:
+            rule['group_id'] = group_id
+        mode = row.get('run_mode', previous_rules.get(row['id'], {}).get('run_mode'))
+        if mode is not None:
+            if mode not in ('maintain', 'crossing'):
+                raise ValueError('Choose maintain power or a new condition crossing.')
+            rule['run_mode'] = mode
         rule['for_seconds'] = number(row.get('for_seconds', 0), 'Hold duration', 0, 86400)
         rule['cooldown_seconds'] = number(row.get('cooldown_seconds', 60), 'Cooldown', 0, 86400)
         rule['conditions'] = []

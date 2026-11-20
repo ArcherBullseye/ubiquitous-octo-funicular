@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, render_template, request
 
 from .schema import number, public_document
 from .metrics import SOURCES, DEVICE_METRICS, dashboard_readings
+from .groups import GROUP_ICONS
 from ..db import get_settings
 from .store import ConflictError, load_document, recent_events, save_document, set_manual_hold
 
@@ -18,8 +19,10 @@ def create_home_blueprint(service, state, discovery=None):
 
     @bp.get('/api/home')
     def get_home():
-        return jsonify(document=public_document(load_document()), devices=service.snapshot(),
-                       events=recent_events(), condition_sources=SOURCES, device_metrics=DEVICE_METRICS,
+        doc = load_document()
+        states = service.engine.states if service.document and service.document['revision'] == doc['revision'] else {}
+        return jsonify(document=public_document(doc), devices=service.snapshot(), rule_states=states,
+                       events=recent_events(), group_icons=GROUP_ICONS, condition_sources=SOURCES, device_metrics=DEVICE_METRICS,
                        dashboard=dashboard_readings(state.snapshot(), get_settings()))
 
     @bp.post('/api/home')
@@ -80,7 +83,8 @@ def create_home_blueprint(service, state, discovery=None):
         dashboard = dashboard_readings(state.snapshot(), get_settings())
         result = matching(rule, service.snapshot(), dashboard['solar'],
                           doc.get('timezone', 'America/Detroit'), time.time(), dashboard)
-        return jsonify(result=result)
+        status = service.engine.states.get(rule_id) if service.document and service.document['revision'] == doc['revision'] else None
+        return jsonify(result=result, status=status, enabled=rule['enabled'])
 
     @bp.get('/api/home/discovery')
     def discovery_status():

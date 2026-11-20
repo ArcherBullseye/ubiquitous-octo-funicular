@@ -106,14 +106,24 @@ blocks into the rule builder, or click blocks and use their arrow controls.
 Rules support all/any conditions, numeric thresholds, plug state, local time
 windows, hold duration, and cooldown. Actions can request plug ON/OFF or send
 Telegram messages through the existing bot. **Save workspace** applies changes.
-Each rule establishes a fresh baseline after startup, reconnecting, or editing.
-A later crossing runs the actions. Missing or stale readings pause evaluation.
+Power rules default to **While conditions match (maintain power)**. After the
+configured hold duration, fresh matched conditions reconcile each target's
+confirmed power state, including at startup, after reconnecting, or after edits.
+Already-correct targets are not switched again. Missing or stale condition or
+target-power readings pause control. Failed/unconfirmed requests retry while
+conditions match, respecting the cooldown and a minimum 30-second retry interval.
+Successful Telegram actions are not repeated during the same continuous match.
+Notification-only rules default to **Only on a new condition crossing**, which
+establishes a baseline on startup/recovery and waits for a later false-to-true
+crossing. Either behavior can be selected explicitly in the editor. The editor
+also shows whether a saved rule is paused, waiting on data, held manually,
+waiting for duration/cooldown, awaiting confirmation, or already satisfied.
 Actions are queued in their displayed order. Device confirmations appear in
 Activity, and a failed action is logged while remaining actions still run.
 
 Manual plug commands create a 15-minute automation hold, retained across app
-restarts. **Resume rules** clears the hold. Conditions must cross again to
-trigger a rule after a skipped action. Time windows use the workspace timezone
+restarts. **Resume rules** clears the hold. Maintaining rules reconcile again
+after the hold ends without needing another threshold crossing. Time windows use the workspace timezone
 (default America/Detroit) and include daylight saving changes.
 
 The first startup migrates the v2.0.8 sensor, hub, and enabled range alerts into
@@ -157,9 +167,9 @@ the weather forecast, missing/expired forecast data pauses that condition.
 Source timestamps are independent: power and miner/dehumidifier readings
 expire after 5 minutes, pool/Bitcoin readings after 15 minutes, and weather
 after 1 hour. Home sensor/plug reports keep their existing 30-minute freshness
-window. Missing, invalid, or stale required readings pause a rule. Rules still
-establish a baseline on startup/reconnect; subsequent condition crossings run
-the actions. Manual plug holds and cooldowns continue to apply.
+window. Missing, invalid, or stale required readings pause a rule. Power rules
+resume maintaining their targets after fresh data returns; crossing rules
+establish a new baseline. Manual plug holds and cooldowns continue to apply.
 
 ### Dehumidifiers in Home
 
@@ -215,3 +225,23 @@ compressor, defrost and fault status but uses different base DP assignments from
 this app's older dashboard defaults. Do not silently replace a user's mappings
 or label unknown numeric DPs as electrical measurements based on a similar model.
 Reference: https://github.com/make-all/tuya-local/blob/main/custom_components/tuya_local/devices/ivation_50pt_dehumidifier.yaml
+
+### Automation groups (v2.4.0)
+
+Use **New group** in Home → Automations to create a named group and select an
+icon. The gear beside a group lets you rename it or change its icon. Expand or
+collapse a group by clicking its header. Open/closed state is stored in that
+browser and does not need Save workspace. Group names, icons, order, and rule
+assignments are saved with the workspace.
+
+Move an automation with its **Automation group** selector, or drag its grip
+onto another group's header/body. New automations and solar ON/OFF pairs use
+the currently selected group. Existing rules begin in Ungrouped. Removing a
+group keeps its rules and moves them to Ungrouped. Save workspace applies
+organizational changes; collapsing a group never pauses its automations.
+
+Groups are presentation metadata. Group-only saves preserve existing device
+connections, manual holds, threshold-crossing memory, and cooldowns. Validation
+allows up to 50 groups, 80-character names, and the supplied icon catalogue;
+dangling references and invalid group IDs/icons are rejected atomically. Older
+API callers that omit grouping fields preserve existing groups/assignments.

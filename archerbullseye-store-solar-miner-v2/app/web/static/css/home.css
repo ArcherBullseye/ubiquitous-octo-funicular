@@ -925,3 +925,31 @@ dialog footer {
 #device-info-dialog footer { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:18px; }
 .telemetry-edit-row { padding:8px 0; border-top:1px solid var(--line); }
 .telemetry-edit-row .field { margin:8px 0; }
+
+.group-list-hint { color:var(--muted);font-size:11px;line-height:1.6;margin:0 0 15px; }
+.automation-group { border:1px solid var(--line);border-radius:10px;margin:0 0 12px;overflow:hidden; }
+.automation-group-heading { display:flex;align-items:center;background:var(--raised); }
+.group-toggle { display:flex;align-items:center;gap:7px;flex:1;min-width:0;border:0;border-radius:0;background:none;text-align:left;padding:11px 8px;font-size:12px; }
+.group-chevron { color:var(--muted);width:10px;flex-shrink:0; }
+.group-symbol { font-size:17px;flex-shrink:0; }
+.group-name { flex:1;overflow-wrap:anywhere;font-weight:600; }
+.group-count { color:var(--muted);font-size:11px; }
+.group-edit { padding:8px;border:0;background:none;color:var(--muted);border-radius:0; }
+.rule-group-rules { padding:6px; }
+.rule-group-rules[hidden] { display:none; }
+.rule-group-rules .rule-option { display:flex;gap:7px;width:100%;margin:3px 0;padding:10px 7px;min-width:0; }
+.rule-group-rules .rule-option strong { overflow-wrap:anywhere; }
+.rule-list-grip { color:var(--muted);cursor:grab;flex-shrink:0;align-self:center; }
+.group-empty { color:var(--muted);font-size:11px;margin:10px 5px; }
+.group-add { width:100%;font-size:11px;border-style:dashed;background:none; }
+.automation-group.drag-over { outline:2px dashed var(--yellow);outline-offset:2px; }
+.automation-group-field { max-width:360px;margin:0 0 15px; }
+#group-dialog { width:min(500px,calc(100vw - 28px));max-width:500px; }
+.group-icon-options { display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px; }
+.group-icon-option { min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:9px 3px; }
+.group-icon-option span { font-size:23px; }
+.group-icon-option small { font-size:9px;color:var(--muted); }
+.group-icon-option.selected { border-color:var(--yellow);background:#302c20; }
+.group-icon-title { font-size:13px;margin:20px 0 12px; }
+#group-form footer { display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap; }
+#remove-group { margin-right:auto; }

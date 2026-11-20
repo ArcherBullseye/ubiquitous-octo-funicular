@@ -13,6 +13,7 @@ from .engine import RuleEngine
 from .metrics import dashboard_readings, numeric
 from .ownership import legacy_owner
 from .telemetry import decode_telemetry
+from .groups import execution_document
 from .store import load_document, log_event, manual_holds, set_manual_hold
 
 
@@ -327,6 +328,14 @@ class HomeService:
 
     def tick(self):
         doc = load_document()
+        if (self.document is not None and doc['revision'] != self.document['revision']
+                and execution_document(doc) == execution_document(self.document)):
+            # Group names/icons/assignments do not reconnect devices, cancel
+            # manual holds, or reset the rule engine's crossing/cooldown memory.
+            with self.lock:
+                self.document = doc
+                for worker in self.workers:
+                    worker.revision = doc['revision']
         if self.document is None or doc['revision'] != self.document['revision']:
             for worker in self.workers:
                 worker.stop_event.set()

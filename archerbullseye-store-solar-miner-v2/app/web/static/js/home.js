@@ -1,6 +1,6 @@
 /* Home workspace: saved device configuration and a drag-and-drop rule builder. */
 'use strict';
-const home = {document: null, readings: {}, events: [], view: 'devices', selected: null, dirty: false, drag: null, dialog: null, sources: {}, deviceMetrics: {}, dashboard: {}};
+const home = {document: null, readings: {}, events: [], ruleStates: {}, view: 'devices', selected: null, dirty: false, drag: null, dialog: null, sources: {}, deviceMetrics: {}, dashboard: {}, groupIcons:{}, groupDialog:null, activeGroup:null};
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function formatDeviceValue(value, unit='') {
@@ -242,7 +242,9 @@ function newAction(kind) {
 function solarPlugPair() {
   const plug = home.document.devices.find(d => d.kind === 'plug' || d.kind === 'dehumidifier');
   if (!plug) { notice('Add or import a smart plug or dehumidifier first.',true); return; }
-  const make = (on, match, soc, watts, seconds) => ({id:uid('rule'),name:`${plug.name} · solar ${on ? 'ON' : 'OFF'}`,enabled:false,
+  const groupId=currentGroup();
+  showRuleGroup(groupId);
+  const make = (on, match, soc, watts, seconds) => ({id:uid('rule'),group_id:groupId,name:`${plug.name} · solar ${on ? 'ON' : 'OFF'}`,enabled:false,
     match,for_seconds:seconds,cooldown_seconds:60,
     conditions:[{...defaultCondition('solar','soc',on ? 'at_least' : 'at_most'),value:soc},
       {...defaultCondition('solar','excess_power_w',on ? 'at_least' : 'at_most'),value:watts}],
@@ -283,25 +285,94 @@ function actionBlock(a, index, length) {
   const attrs = `data-block="${esc(a.id)}" data-kind="actions"`;
   return `<div class="rule-block action" data-drag="actions" data-id="${esc(a.id)}">${blockControls(a.id,'actions',index,length)}<strong>${a.type === 'telegram' ? 'Telegram message' : 'Turn ' + (home.document.devices.find(d => d.id === a.device_id)?.kind === 'dehumidifier' ? 'dehumidifier' : 'plug') + (a.on ? ' ON' : ' OFF')}</strong>${a.type === 'telegram' ? `<textarea aria-label="Telegram message" ${attrs} data-key="message" maxlength="1000">${esc(a.message)}</textarea>` : `<select aria-label="Target device" ${attrs} data-key="device_id">${options(home.document.devices.filter(d => d.kind === 'plug' || d.kind === 'dehumidifier').map(d => [d.id,d.name]),a.device_id)}</select><select aria-label="Power action" ${attrs} data-key="on">${options([['true','Turn ON'],['false','Turn OFF']],String(a.on))}</select>`}</div>`;
 }
+const groupCollapseKey = 'solar-miner.home.closed-automation-groups';
+const closedGroups = (()=>{
+  try {const value=JSON.parse(localStorage.getItem(groupCollapseKey) || '[]');return new Set(Array.isArray(value) ? value.filter(id=>typeof id === 'string') : []);}
+  catch {return new Set();}
+})();
+function rememberClosedGroups() {try {localStorage.setItem(groupCollapseKey,JSON.stringify([...closedGroups]));} catch {}}
+function automationGroups() {return home.document.groups || [];}
+function groupSymbol(group) {return home.groupIcons[group?.icon]?.symbol || '📁';}
+function currentGroup() {
+  const id=home.activeGroup ?? selectedRule()?.group_id ?? '';
+  return automationGroups().some(group=>group.id === id) ? id : '';
+}
+function showRuleGroup(id) {closedGroups.delete(id);rememberClosedGroups();}
 function renderRulesList() {
   $('rule-count').textContent = home.document.rules.length;
-  $('rules-list').innerHTML = home.document.rules.map(r => `<button class="rule-option ${r.id === home.selected ? 'selected' : ''}" data-action="select-rule" data-id="${esc(r.id)}"><strong>${esc(r.name)}</strong><small>${r.enabled ? 'ENABLED' : 'PAUSED'} · ${r.conditions.length} conditions · ${r.actions.length} actions</small></button>`).join('') || '<p class="hint">Your saved automations will appear here.</p>';
+  const sections=[...automationGroups(),{id:'',name:'Ungrouped',icon:'folder'}];
+  $('rules-list').innerHTML=sections.map(group=>{
+    const rules=home.document.rules.filter(rule=>(rule.group_id || '') === group.id);
+    const expanded=!closedGroups.has(group.id);
+    const bodyId=group.id ? 'rule-group-id-'+group.id : 'rule-group-none';
+    return `<section class="automation-group" data-rule-group="${esc(group.id)}"><div class="automation-group-heading"><button class="group-toggle" data-action="toggle-group" data-id="${esc(group.id)}" aria-expanded="${expanded}" aria-controls="${esc(bodyId)}"><span class="group-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span><span class="group-symbol" aria-hidden="true">${groupSymbol(group)}</span><span class="group-name">${esc(group.name)}</span><span class="group-count">${rules.length}</span></button>${group.id ? `<button class="group-edit" data-action="edit-group" data-id="${esc(group.id)}" aria-label="Edit group ${esc(group.name)}">⚙</button>` : ''}</div><div id="${esc(bodyId)}" class="rule-group-rules" ${expanded ? '' : 'hidden'}>${rules.length ? rules.map(r=>`<button class="rule-option ${r.id === home.selected ? 'selected' : ''}" data-action="select-rule" data-id="${esc(r.id)}" data-drag="rule"><span class="rule-list-grip" data-handle="true" title="Drag to another group" aria-hidden="true">⠿</span><span><strong>${esc(r.name)}</strong><small>${r.enabled ? 'ENABLED' : 'PAUSED'} · ${r.conditions.length} conditions · ${r.actions.length} actions</small></span></button>`).join('') : `<p class="group-empty">No automations yet.</p><button class="group-add" data-action="new-rule" data-group-id="${esc(group.id)}">＋ Add automation</button>`}</div></section>`;
+  }).join('');
 }
+function renderGroupIcons() {
+  const chosen=home.groupDialog.icon;
+  $('group-icon-options').innerHTML=Object.entries(home.groupIcons).map(([id,icon])=>`<button type="button" class="group-icon-option ${id === chosen ? 'selected' : ''}" data-action="choose-group-icon" data-id="${esc(id)}" aria-label="Group icon: ${esc(icon.label)}" aria-pressed="${id === chosen}" title="${esc(icon.label)}"><span aria-hidden="true">${icon.symbol}</span><small>${esc(icon.label)}</small></button>`).join('');
+}
+function openGroup(id) {
+  if (!id && automationGroups().length >= 50) throw new Error('You can create up to 50 automation groups.');
+  const existing=automationGroups().find(group=>group.id === id);
+  home.groupDialog=structuredClone(existing || {id:uid('group'),name:'',icon:'folder'});
+  home.groupDialog.existing=!!existing;
+  $('group-dialog-title').textContent=existing ? 'Edit automation group' : 'New automation group';
+  $('group-name').value=home.groupDialog.name;
+  $('remove-group').hidden=!existing;
+  $('group-form-error').textContent='';renderGroupIcons();$('group-dialog').showModal();$('group-name').focus();
+}
+function groupAction(button) {
+  const action=button.dataset.action,id=button.dataset.id;
+  if (action === 'new-group') return openGroup();
+  if (action === 'edit-group') return openGroup(id);
+  if (action === 'toggle-group') {
+    home.activeGroup=id;
+    if (closedGroups.has(id)) closedGroups.delete(id); else closedGroups.add(id);
+    rememberClosedGroups();renderRulesList();return;
+  }
+  if (action === 'choose-group-icon') {home.groupDialog.icon=id;renderGroupIcons();return;}
+  if (action === 'close-group') {$('group-dialog').close();home.groupDialog=null;return;}
+  if (action === 'remove-group') {
+    const groupId=home.groupDialog.id;
+    home.document.groups=automationGroups().filter(group=>group.id !== groupId);
+    for (const rule of home.document.rules) if (rule.group_id === groupId) rule.group_id='';
+    closedGroups.delete(groupId);rememberClosedGroups();home.activeGroup='';home.groupDialog=null;$('group-dialog').close();changed();renderRules();
+  }
+}
+$('group-form').addEventListener('submit',event=>{
+  event.preventDefault();
+  const edited=home.groupDialog,name=$('group-name').value.trim();
+  if (!name) {$('group-form-error').textContent='Give the group a name.';return;}
+  const groups=automationGroups();
+  const value={id:edited.id,name,icon:edited.icon};
+  if (edited.existing && !groups.some(group=>group.id === value.id)) {$('group-form-error').textContent='This group changed in another window. Reload the workspace.';return;}
+  home.document.groups=edited.existing ? groups.map(group=>group.id === value.id ? value : group) : [...groups,value];
+  home.activeGroup=value.id;showRuleGroup(value.id);home.groupDialog=null;$('group-dialog').close();changed();renderRules();
+});
+$('group-dialog').addEventListener('cancel',()=>{home.groupDialog=null;});
 function renderRules() {
   if (!selectedRule()) home.selected = home.document.rules[0]?.id;
   renderRulesList();
   const r = selectedRule();
   if (!r) { $('rule-editor').innerHTML = '<div class="empty-state"><h3>Build your first automation.</h3>Turn a plug on when the battery is full and excess power is available, turn it off when power drops, or send Telegram alerts.<br><button class="primary" data-action="new-rule">＋ New automation</button></div>'; return; }
-  $('rule-editor').innerHTML = `<div class="rule-title"><input aria-label="Automation name" data-rule-key="name" value="${esc(r.name)}" maxlength="120"><label class="toggle-label"><input type="checkbox" data-rule-key="enabled" ${r.enabled ? 'checked' : ''}>Enabled</label></div><p class="rule-intro">Drag blocks below, or click them to add. Rules run after saving. The first fresh reading sets the baseline; a later crossing runs the actions.</p>
+  const groupChoices=[['','Ungrouped'],...automationGroups().map(group=>[group.id,`${groupSymbol(group)} ${group.name}`])];
+  $('rule-editor').innerHTML = `<div class="rule-title"><input aria-label="Automation name" data-rule-key="name" value="${esc(r.name)}" maxlength="120"><label class="toggle-label"><input type="checkbox" data-rule-key="enabled" ${r.enabled ? 'checked' : ''}>Enabled</label></div><label class="field automation-group-field">Automation group<select aria-label="Automation group" data-rule-key="group_id">${options(groupChoices,r.group_id || '')}</select></label><p class="rule-intro">Drag blocks below, or click them to add. Rules run after saving. Power rules maintain the requested state while fresh conditions match, including after startup or reconnection. Notification-only rules default to new crossings.</p>
     <div class="builder-palette"><span>CONDITIONS</span>${[['soc','Battery SOC'],['excess','Excess power'],['solar','Solar & power'],['dashboard','Dashboard reading'],['temperature','Temperature'],['humidity','Humidity'],['power','Device power'],['time','Time window']].map(([id,label]) => `<button class="palette-block" data-handle="true" data-palette="${id}" data-kind="conditions" data-action="add-palette">＋ ${label}</button>`).join('')}<span>ACTIONS</span>${[['plug-on','Turn device ON'],['plug-off','Turn device OFF'],['telegram','Telegram']].map(([id,label]) => `<button class="palette-block" data-handle="true" data-palette="${id}" data-kind="actions" data-action="add-palette">＋ ${label}</button>`).join('')}</div>
     <div class="flow-section drop-zone" data-drop="conditions"><div class="flow-heading"><span class="step-title">WHEN</span><label class="toggle-label">Match <select aria-label="Match conditions" data-rule-key="match">${options([['all','all conditions'],['any','any condition']],r.match)}</select></label></div>${r.conditions.map((c,i) => conditionBlock(c,i,r.conditions.length)).join('')}<button class="add-block" data-action="add-condition">＋ Add condition</button></div>
     <div class="flow-arrow" aria-hidden="true">↓</div>
     <div class="flow-section drop-zone" data-drop="actions"><div class="flow-heading"><span class="step-title">THEN · ACTIONS</span></div>${r.actions.map((a,i) => actionBlock(a,i,r.actions.length)).join('')}<button class="add-block" data-action="add-action">＋ Add action</button></div>
-    <div class="rule-options"><label>Conditions must hold for (seconds)<input type="number" data-rule-key="for_seconds" min="0" max="86400" value="${r.for_seconds}"></label><label>Minimum time between runs (seconds)<input type="number" data-rule-key="cooldown_seconds" min="0" max="86400" value="${r.cooldown_seconds}"></label></div>
-    <label class="field">Workspace timezone<input data-workspace-key="timezone" value="${esc(home.document.timezone || 'America/Detroit')}" placeholder="America/Detroit"></label><p class="hint">Stale or unavailable readings pause a rule. Manual plug controls hold off automatic switching for 15 minutes. Time windows use this timezone, including daylight saving changes.</p><div class="rule-footer"><button data-action="preview-rule">Check saved conditions</button><button class="danger" data-action="delete-rule">Remove automation</button></div><div id="preview-result" class="preview-result" role="status"></div>`;
+    <label class="field">Run behavior<select aria-label="Run behavior" data-rule-key="run_mode">${options([['maintain','While conditions match (maintain power)'],['crossing','Only on a new condition crossing']],r.run_mode || (r.actions.some(a=>a.type === 'plug') ? 'maintain' : 'crossing'))}</select></label><div id="rule-status" class="preview-result" role="status">${esc(ruleStatusText(r))}</div>
+    <div class="rule-options"><label>Conditions must hold for (seconds)<input type="number" data-rule-key="for_seconds" min="0" max="86400" value="${r.for_seconds}"></label><label>Minimum time between attempts (seconds)<input type="number" data-rule-key="cooldown_seconds" min="0" max="86400" value="${r.cooldown_seconds}"></label></div>
+    <label class="field">Workspace timezone<input data-workspace-key="timezone" value="${esc(home.document.timezone || 'America/Detroit')}" placeholder="America/Detroit"></label><p class="hint">Stale or unavailable readings pause a rule. Manual plug controls hold off automatic switching for 15 minutes. Failed power requests retry no faster than every 30 seconds and respect the configured cooldown. Time windows use this timezone, including daylight saving changes.</p><div class="rule-footer"><button data-action="preview-rule">Check saved conditions</button><button class="danger" data-action="delete-rule">Remove automation</button></div><div id="preview-result" class="preview-result" role="status"></div>`;
+}
+function ruleStatusText(rule) {
+  if (home.dirty) return 'Unsaved changes. Status will update after saving.';
+  if (!rule.enabled) return 'Automation is paused.';
+  return home.ruleStates[rule.id]?.detail || 'Waiting for the automation engine to evaluate the saved rule.';
 }
 function renderActivity() {
-  $('activity-list').innerHTML = home.events.length ? home.events.map(e => `<div class="activity-event"><span class="event-kind ${e.kind === 'error' ? 'error' : ''}">${esc(e.kind)}</span><div><strong>${esc(e.name)}</strong><p>${esc(e.detail)}</p><time>${esc(new Date(e.ts).toLocaleString())}</time></div></div>`).join('') : '<div class="empty-state">Activity will appear when a rule crosses a limit or a plug is switched.</div>';
+  $('activity-list').innerHTML = home.events.length ? home.events.map(e => `<div class="activity-event"><span class="event-kind ${e.kind === 'error' ? 'error' : ''}">${esc(e.kind)}</span><div><strong>${esc(e.name)}</strong><p>${esc(e.detail)}</p><time>${esc(new Date(e.ts).toLocaleString())}</time></div></div>`).join('') : '<div class="empty-state">Activity will appear when a rule runs or a plug is switched. The automation editor shows why a rule is waiting.</div>';
 }
 function move(items, id, direction) {
   const from = items.findIndex(d => d.id === id);
@@ -323,11 +394,14 @@ async function refresh() {
     const payload = await api('');
     home.readings = payload.devices;
     home.events = payload.events;
+    home.ruleStates = payload.rule_states || {};
+    if ($('rule-status') && selectedRule()) $('rule-status').textContent=ruleStatusText(selectedRule());
+    home.groupIcons = payload.group_icons || {};
     home.sources = payload.condition_sources || {};
     home.deviceMetrics = payload.device_metrics || {};
     home.dashboard = payload.dashboard || {};
     updateConditionReadings();
-    if (!home.dirty && !home.dialog) {
+    if (!home.dirty && !home.dialog && !home.groupDialog) {
       const revisionChanged = !home.document || home.document.revision !== payload.document.revision;
       home.document = payload.document;
       if (revisionChanged && home.view === 'automations') renderRules();
@@ -341,6 +415,7 @@ async function refresh() {
 async function handleAction(button) {
   const action = button.dataset.action;
   const id = button.dataset.id;
+  if (['new-group','edit-group','toggle-group','choose-group-icon','close-group','remove-group'].includes(action)) return groupAction(button);
   if (action === 'device-info' || action.startsWith('device-info-')) return deviceInfoAction(button);
   if (action === 'discover' || action.startsWith('discovery-')) return discoveryAction(button);
   if (action === 'new-device' || action === 'new-hub') return openDevice(action === 'new-hub' ? 'hub' : 'device');
@@ -356,11 +431,13 @@ async function handleAction(button) {
   if (action === 'resume') { await post(`/devices/${encodeURIComponent(id)}/resume`,{}); await refresh(); return; }
   if (action === 'solar-plug-pair') return solarPlugPair();
   if (action === 'new-rule') {
+    if (button.dataset.groupId !== undefined) home.activeGroup=button.dataset.groupId;
+    const groupId=currentGroup();showRuleGroup(groupId);
     const condition = newCondition('soc');
-    const rule = {id:uid('rule'),name:'New automation',enabled:false,match:'all',conditions:[condition],actions:[newAction(home.document.devices.some(d => d.kind === 'plug' || d.kind === 'dehumidifier') ? 'plug-on' : 'telegram')],for_seconds:0,cooldown_seconds:60};
+    const rule = {id:uid('rule'),name:'New automation',group_id:groupId,enabled:false,match:'all',conditions:[condition],actions:[newAction(home.document.devices.some(d => d.kind === 'plug' || d.kind === 'dehumidifier') ? 'plug-on' : 'telegram')],for_seconds:0,cooldown_seconds:60};
     home.document.rules.push(rule); home.selected = rule.id; changed(); showView('automations'); return;
   }
-  if (action === 'select-rule') { home.selected = id; renderRules(); return; }
+  if (action === 'select-rule') { home.selected = id;home.activeGroup=selectedRule()?.group_id || '';renderRules();return; }
   if (action === 'delete-rule') {
     if (!confirm('Remove this automation?')) return;
     home.document.rules = home.document.rules.filter(r => r.id !== home.selected); changed(); renderRules(); return;
@@ -373,7 +450,7 @@ async function handleAction(button) {
   if (action === 'preview-rule') {
     if (home.dirty) { notice('Save the workspace before checking the conditions.',true); return; }
     const result = await api('/preview/'+encodeURIComponent(home.selected));
-    $('preview-result').textContent = result.result === null ? 'Waiting for fresh readings from every required source.' : result.result ? 'The saved conditions currently match. This check runs no actions.' : 'The saved conditions currently do not match.';
+    $('preview-result').textContent = (result.result === null ? 'Waiting for fresh readings from every required source.' : result.result ? 'The saved conditions currently match.' : 'The saved conditions currently do not match.') + ' ' + (!result.enabled ? 'Automation is paused.' : result.status?.detail || 'Waiting for evaluation.') + ' This check runs no actions.';
   }
   if (action === 'refresh') await refresh();
 }
@@ -418,7 +495,9 @@ function updateRuleInput(event) {
   if (el.dataset.ruleKey) {
     const key=el.dataset.ruleKey;
     selectedRule()[key]=el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) : el.value;
+    if (key === 'group_id') {home.activeGroup=el.value;showRuleGroup(el.value);}
     changed(); renderRulesList();
+    if ($('rule-status')) $('rule-status').textContent=ruleStatusText(selectedRule());
   }
   if (!el.dataset.block) return;
   const block=selectedRule()[el.dataset.kind].find(b => b.id === el.dataset.block);
@@ -445,12 +524,21 @@ document.addEventListener('change', event => {
 let pointerDrag = null;
 let dragClickUntil = 0;
 function dropDestination(target) {
+  if (home.drag?.kind === 'rule') return target.closest('[data-rule-group]');
   const zone = target.closest('[data-drop]');
   const item = target.closest('[data-drag]');
   if (home.drag?.palette && zone?.dataset.drop === home.drag.kind) return zone;
   return item?.dataset.drag === home.drag?.kind ? item : null;
 }
 function finishDrag(target) {
+  if (home.drag.kind === 'rule') {
+    const destination=target?.closest('[data-rule-group]');
+    const rule=home.document.rules.find(rule=>rule.id === home.drag.id);
+    if (destination && rule && (rule.group_id || '') !== destination.dataset.ruleGroup) {
+      rule.group_id=destination.dataset.ruleGroup;home.selected=rule.id;home.activeGroup=rule.group_id;showRuleGroup(rule.group_id);changed();
+    }
+    return;
+  }
   const zone = target?.closest('[data-drop]');
   const item = target?.closest('[data-drag]');
   if (zone?.dataset.drop === home.drag.kind && home.drag.palette) addBlock(home.drag.kind, home.drag.palette);
