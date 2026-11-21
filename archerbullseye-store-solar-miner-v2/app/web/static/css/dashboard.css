@@ -471,11 +471,11 @@ main {
 }
 
 
-/* Match the Home card to the dehumidifier column below it. */
+/* Smart Start and compact Earnings share the top-right row. */
 .smart-home-row { display: grid; grid-template-columns: 1.25fr 1fr; gap: clamp(8px, .9vw, 12px); min-width: 0; }
 .smart-home-row > .card { min-width: 0; }
 .smart-home-row .sc-row { flex-wrap: wrap; }
-.home-card { min-height: 170px; }
+.smart-home-row > .stat-card, .home-card { min-height: 170px; }
 .stats-grid > .acc-teal { min-height: 170px; }
 .home-card-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
 .home-card-head .card-label { margin: 0; }
@@ -506,3 +506,41 @@ main {
 }
 @media (max-width: 1000px) { .side-col { flex-direction: column; } }
 @media (max-width: 380px) { .smart-home-row, .stats-grid { grid-template-columns: 1fr; } }
+
+#dehum-card.tank-full {border-color:rgba(248,113,113,.65);background:linear-gradient(135deg,rgba(248,113,113,.10),var(--card));}
+.dehum-pan-status {margin-top:5px;font-weight:600;}
+.dehum-pan-status.full, .home-readings .tank-full-reading {color:var(--red);}
+.dehum-pan-status.unknown {color:var(--muted);}
+.dehum-pan-status.last-known {color:var(--amber);}
+#dehum-updated {font-size:10px;margin-top:3px;}
+.dehum-btns button:disabled {opacity:.4;cursor:not-allowed;}
+
+.smart-home-row .es-row { grid-template-columns: 34px minmax(0, 1fr) auto; gap: 2px; }
+/* Keep the desktop dashboard within the window; long lists scroll in their cards. */
+@media (min-width: 1001px) {
+  main { height: calc(100dvh - 53px); }
+  main > .error-banner { flex: 0 0 auto; }
+  .hero-row { flex: 1.2 1 0; min-height: 0; }
+  .mid-row { flex: .95 1 0; min-height: 0; }
+  .charts-row { flex: 1 1 0; min-height: 0; }
+  .side-col, .smart-home-row, .stats-grid, .left-col { min-height: 0; }
+  .mining-card { flex: 0 0 auto; }
+  .smart-home-row { flex: 1; }
+  .smart-home-row > .card, .stats-grid > .card { min-height: 0; overflow-y: auto; }
+  .smart-home-row > .stat-card { padding: 7px 9px; }
+  .smart-card { padding: 6px 10px; }
+  .smart-card .sc-row .card-label { font-size: 11px; letter-spacing: .06em; }
+  .smart-card .sc-stat { font-size: 11px; }
+  .smart-home-row .es-row { padding: 1px 0; }
+  .smart-home-row .es-row b { font-size: 12px; }
+  .smart-home-row .es-row b.es-big { font-size: 12px; }
+  .smart-home-row .es-usd { font-size: 10px; }
+  .smart-home-row .es-row > span:first-child { font-size: 10px; }
+  .stats-grid .home-readings th, .stats-grid .home-readings td { padding-top: 2px; padding-bottom: 2px; }
+  .left-col > .card { min-height: 0; overflow-y: auto; }
+  .flow-card { min-height: 0; }
+  .flow-card svg { height: 100%; min-height: 0; max-height: 100%; }
+  .chart-card { overflow: hidden; }
+  .chart-wrap { min-height: 0; max-height: none; }
+  .chart-wrap canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
+}

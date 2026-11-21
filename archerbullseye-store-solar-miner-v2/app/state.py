@@ -39,7 +39,8 @@ class AppState:
             # Dehumidifier
             "dehum_power": None,
             "dehum_humidity": None,
-            "dehum_tank_full": False,
+            "dehum_tank_full": None,
+            "dehum_tank_last_updated": None,
             "dehum_auto_on": False,
             "dehum_error": None,
             "dehum_auto_on_since": None,

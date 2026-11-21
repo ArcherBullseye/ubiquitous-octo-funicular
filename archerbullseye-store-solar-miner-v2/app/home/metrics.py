@@ -191,5 +191,6 @@ def dashboard_readings(snapshot, settings):
     dehum = result['dashboard:dehumidifier']
     if not snapshot.get('dehum_error'):
         for key in ('power', 'humidity', 'tank_full', 'auto_on'):
-            put(dehum, key, snapshot.get('dehum_' + key), snapshot.get('dehum_last_updated'))
+            stamp_key = 'dehum_tank_last_updated' if key == 'tank_full' and 'dehum_tank_last_updated' in snapshot else 'dehum_last_updated'
+            put(dehum, key, snapshot.get('dehum_' + key), snapshot.get(stamp_key))
     return result

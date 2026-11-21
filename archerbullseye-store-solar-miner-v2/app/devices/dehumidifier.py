@@ -41,7 +41,7 @@ class Dehumidifier(SwitchableLoad):
             }
         except Exception as e:
             return {"reachable": False, "error": str(e),
-                    "power": None, "humidity": None, "tank_full": False}
+                    "power": None, "humidity": None, "tank_full": None}
 
     def raw_status(self) -> dict:
         return self._client.raw_status()
@@ -67,7 +67,10 @@ def run_auto_control(dehum: Dehumidifier, settings: dict, state, readings: Optio
             raise RuntimeError(status["error"] or "unreachable")
 
         power = status["power"]
-        tank_full = status["tank_full"]
+        reported_tank = status["tank_full"]
+        # Partial status snapshots must not clear a previously full pan.
+        tank_full = reported_tank if type(reported_tank) is bool else state.get("dehum_tank_full")
+        tank_updated = utcnow_str() if type(reported_tank) is bool else state.get("dehum_tank_last_updated")
         auto_on = False
 
         now_ts = time.time()
@@ -108,6 +111,7 @@ def run_auto_control(dehum: Dehumidifier, settings: dict, state, readings: Optio
             "dehum_power": power,
             "dehum_humidity": status["humidity"],
             "dehum_tank_full": tank_full,
+            "dehum_tank_last_updated": tank_updated,
             "dehum_auto_on": auto_on,
             "dehum_error": None,
             "dehum_auto_on_since": auto_on_since,

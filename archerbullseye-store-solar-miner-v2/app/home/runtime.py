@@ -337,14 +337,15 @@ class HomeService:
             self.state.update({'dehum_managed_by_home': owner['id'],
                 'dehum_power': row.get('power') if connected else None,
                 'dehum_humidity': row.get('humidity_pct') if connected else None,
-                'dehum_tank_full': row.get('tank_full') if connected else None,
+                'dehum_tank_full': row.get('tank_full'),
+                'dehum_tank_last_updated': (row.get('updated_at') or {}).get('tank_full'),
                 'dehum_last_updated': (row.get('updated_at') or {}).get('power'),
                 'dehum_auto_on': False,
                 'dehum_error': None if connected else 'Home connection is waiting or offline.'})
         elif self.state.get('dehum_managed_by_home'):
             self.state.update({'dehum_managed_by_home': None, 'dehum_power': None,
                                'dehum_humidity': None, 'dehum_last_updated': None,
-                               'dehum_tank_full': None, 'dehum_auto_on': False, 'dehum_error': None})
+                               'dehum_tank_full': None, 'dehum_tank_last_updated': None, 'dehum_auto_on': False, 'dehum_error': None})
         sensor = next((d for d in devices if d['kind'] == 'sensor'), None)
         if sensor:
             self.state.set('home_sensor', {'name': sensor['name'], 'mapping_configured': True,

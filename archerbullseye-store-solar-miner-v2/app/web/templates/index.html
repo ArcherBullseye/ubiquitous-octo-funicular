@@ -135,30 +135,12 @@
         </div>
         <div id="eod-projection"></div>
       </div>
-      <div class="card stat-card acc-teal home-card">
-        <div class="home-card-head">
-          <div class="card-label">⌂ Home Assistant</div>
-          <button type="button" class="btn-settings home-settings-button" aria-label="Home settings" title="Home settings" onclick="location.href='/home#dashboard'">⚙</button>
-        </div>
-        <table class="home-readings" aria-label="Home sensor readings">
-          <thead>
-            <tr><th scope="col">Name</th><th scope="col" id="home-reading-heading">Temp</th><th scope="col" id="home-detail-heading">Humidity</th></tr>
-          </thead>
-          <tbody id="home-device-rows">
-            <tr>
-              <th scope="row" id="home-name">Temperature &amp; humidity</th>
-              <td class="num" id="home-temperature">—</td>
-              <td>
-                <span class="home-humidity-reading">
-                  <span class="num" id="home-humidity">—</span>
-                  <span id="home-freshness" class="home-freshness" role="img" aria-label="No sensor readings yet" title="No sensor readings yet"></span>
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="home-footer"><span class="badge badge-gray" id="home-status">Not configured</span></div>
-        <div class="card-sub" id="home-updated">Local Zigbee sensor</div>
+      <div class="card stat-card acc-amber">
+        <div class="card-label">₿ Earnings</div>
+        <div class="es-row"><span>Today</span><b class="num es-big" id="pool-sats-today">—</b><span class="es-usd num" id="pool-today-usd">—</span></div>
+        <div class="es-row"><span>Unpaid</span><b class="num es-big" id="pool-sats-unpaid">—</b><span class="es-usd num" id="pool-unpaid-usd">—</span></div>
+        <div class="es-row"><span>BTC</span><b class="num es-big" id="btc-price">—</b></div>
+        <div class="card-sub num" style="margin-top:2px;font-size:10px;" id="pool-hashrate"></div>
       </div>
       </div>
     </div>
@@ -192,21 +174,40 @@
     </div>
 
     <div class="stats-grid">
-      <div class="card stat-card acc-amber">
-        <div class="card-label">₿ Earnings</div>
-        <div class="es-row"><span>Today</span><b class="num es-big" id="pool-sats-today">—</b><span class="es-usd num" id="pool-today-usd">—</span></div>
-        <div class="es-row"><span>Unpaid</span><b class="num es-big" id="pool-sats-unpaid">—</b><span class="es-usd num" id="pool-unpaid-usd">—</span></div>
-        <div class="es-row"><span>BTC</span><b class="num es-big" id="btc-price">—</b></div>
-        <div class="card-sub num" style="margin-top:5px;" id="pool-hashrate"></div>
+      <div class="card stat-card acc-teal home-card">
+        <div class="home-card-head">
+          <div class="card-label">⌂ Home Assistant</div>
+          <button type="button" class="btn-settings home-settings-button" aria-label="Home settings" title="Home settings" onclick="location.href='/home#dashboard'">⚙</button>
+        </div>
+        <table class="home-readings" aria-label="Home sensor readings">
+          <thead>
+            <tr><th scope="col">Name</th><th scope="col" id="home-reading-heading">Temp</th><th scope="col" id="home-detail-heading">Humidity</th></tr>
+          </thead>
+          <tbody id="home-device-rows">
+            <tr>
+              <th scope="row" id="home-name">Temperature &amp; humidity</th>
+              <td class="num" id="home-temperature">—</td>
+              <td>
+                <span class="home-humidity-reading">
+                  <span class="num" id="home-humidity">—</span>
+                  <span id="home-freshness" class="home-freshness" role="img" aria-label="No sensor readings yet" title="No sensor readings yet"></span>
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="home-footer"><span class="badge badge-gray" id="home-status">Not configured</span></div>
+        <div class="card-sub" id="home-updated">Local Zigbee sensor</div>
       </div>
-      <div class="card stat-card acc-teal">
+      <div class="card stat-card acc-teal" id="dehum-card">
         <div class="card-label">💧 Dehumidifier</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;">
           <span class="badge badge-gray" id="dehum-badge">—</span>
           <span class="badge badge-green" id="dehum-auto-badge" style="display:none;">Auto</span>
           <span class="card-value num" id="dehum-humidity" style="font-size:15px;margin-left:auto;">—</span>
         </div>
-        <div class="card-sub" id="dehum-tank" style="display:none;color:var(--red);margin-top:2px;">⚠ Tank Full</div>
+        <div class="card-sub dehum-pan-status" id="dehum-tank" role="status" aria-live="polite">Pan status unavailable</div>
+        <div class="card-sub" id="dehum-updated">Waiting for device report</div>
         <div class="card-sub" id="dehum-error" style="display:none;font-size:10px;margin-top:2px;"></div>
         <div class="dehum-btns">
           <button class="btn-amber" id="dehum-on-btn" onclick="dehum(true)">ON</button>

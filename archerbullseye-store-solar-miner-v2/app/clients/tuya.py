@@ -64,7 +64,7 @@ class DehumidifierClient:
             return {
                 "power":      bool(dps.get("1", False)),
                 "humidity":   dps.get("109"),
-                "tank_full":  bool(dps.get("111", False)),
+                "tank_full":  dps.get("111") if type(dps.get("111")) is bool else None,
                 "target_hum": dps.get("3"),
                 "dps":        dps,
             }

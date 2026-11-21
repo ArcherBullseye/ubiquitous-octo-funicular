@@ -269,3 +269,24 @@ Rows follow the order in Devices. Existing installations default to showing
 all sensors; an explicitly empty selection hides all device rows. Visibility
 changes preserve connections, manual holds, and automation state. Older API
 clients preserve saved choices when they omit dashboard visibility settings.
+
+### Dehumidifier pan reporting (v2.6.0)
+
+The dashboard dehumidifier card prioritizes **Pan full** over its ON/OFF state,
+shows **Empty the water pan**, highlights the card, and disables its ON button
+while the last confirmed pan status is full. A confirmed not-full report clears
+the warning. Missing/invalid pan data is **Pan status unavailable**, not an empty
+pan. Pan timestamps are independent of power/humidity updates; old or offline
+full-pan warnings remain visible as last-known reports with their age. A device
+selected in the Home Assistant card also shows **Pan full** in its reading cell.
+Only the configured boolean tank-full signal is interpreted; no model DP IDs or
+bitmask meanings are inferred. Local previews use simulated device reports.
+
+### Compact desktop dashboard (v2.6.0)
+
+Earnings sits beside Smart Start; Home Assistant sits beside the dehumidifier.
+Earnings uses tighter spacing, while the desktop dashboard shares the available
+window height across the three main rows so the bottom charts remain visible.
+Long lists scroll inside their cards. Ramp Activity stays in its original place
+with its existing event list. The mobile layout continues to stack vertically.
+Verified locally at 1280×720, 1366×768, and 1512×740 with simulated readings.

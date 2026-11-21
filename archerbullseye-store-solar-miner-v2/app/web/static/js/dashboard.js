@@ -373,42 +373,7 @@ async function refresh() {
       eodEl.style.display = 'none';
     }
 
-    // Dehumidifier
-    const dehumBadge = el('dehum-badge');
-    const dehumErrEl = el('dehum-error');
-    const dehumAutoB = el('dehum-auto-badge');
-    const homeManaged = !!s.dehum_managed_by_home;
-    el('s-dehum_auto_enabled').disabled = homeManaged;
-    el('dehum-home-managed').hidden = !homeManaged;
-    dehumAutoB.textContent = homeManaged ? 'Home rules' : 'Auto';
-    if (s.dehum_power !== null && s.dehum_power !== undefined) {
-      dehumBadge.textContent = s.dehum_power ? 'Running' : 'Idle';
-      dehumBadge.className = 'badge ' + (s.dehum_power ? 'badge-green' : 'badge-gray');
-      el('dehum-humidity').textContent = s.dehum_humidity != null ? s.dehum_humidity + '%' : '—';
-      el('dehum-tank').style.display = s.dehum_tank_full ? '' : 'none';
-      dehumAutoB.style.display = homeManaged || s.dehum_auto_on ? '' : 'none';
-      dehumErrEl.style.display = 'none';
-      el('dehum-on-btn').className = s.dehum_power ? 'btn-amber' : 'btn-dim';
-      el('dehum-off-btn').className = s.dehum_power ? 'btn-dim' : 'btn-amber';
-    } else if (s.dehum_error) {
-      dehumBadge.textContent = 'Error';
-      dehumBadge.className = 'badge badge-red';
-      dehumErrEl.textContent = s.dehum_error;
-      dehumErrEl.style.display = '';
-      dehumAutoB.style.display = 'none';
-    } else {
-      dehumBadge.textContent = 'N/C';
-      dehumBadge.className = 'badge badge-gray';
-      dehumAutoB.style.display = 'none';
-    }
-    const gridW = s.readings ? (s.readings.grid_power_w || 0) : 0;
-    const pipColors = ['#f87171', '#fbbf24', '#34d399'];
-    const pipActive = gridW >= dehumThresholdW ? 2 : gridW >= dehumThresholdW * 0.5 ? 1 : 0;
-    for (let i = 0; i < 3; i++) {
-      const pip = el('dehum-pip-' + i);
-      pip.style.background = i === pipActive ? pipColors[i] : 'var(--muted)';
-      pip.style.opacity = i === pipActive ? '1' : '.25';
-    }
+    updateDehumidifier(s);
 
     // Weather
     if (wx) {
@@ -1039,9 +1004,10 @@ function updateHomeSensors(devices, legacySensor, selectedIds) {
     const temperatureMetric = device.temperature_f == null ? 'temperature_c' : 'temperature_f';
     const temperature = device.temperature_f ?? (device.temperature_c == null ? null : device.temperature_c * 9 / 5 + 32);
     const metrics = sensor ? [temperatureMetric,'humidity_pct'] :
-      dehum ? ['power','humidity_pct'] : ['power', ...(device.power_w == null ? [] : ['power_w'])];
-    const values = sensor ? [temperature,device.humidity_pct] : dehum ? [device.power,device.humidity_pct] : [device.power,device.power_w];
-    const first = sensor ? (temperature == null ? '—' : temperature.toFixed(1)+'°F') :
+      dehum ? ['power','humidity_pct', ...(device.tank_full == null ? [] : ['tank_full'])] : ['power', ...(device.power_w == null ? [] : ['power_w'])];
+    const values = sensor ? [temperature,device.humidity_pct] : dehum ? [device.power,device.humidity_pct, ...(device.tank_full == null ? [] : [device.tank_full])] : [device.power,device.power_w];
+    const panFull = dehum && device.tank_full === true;
+    const first = panFull ? 'Pan full' : sensor ? (temperature == null ? '—' : temperature.toFixed(1)+'°F') :
       device.power == null ? '—' : device.power ? 'On' : 'Off';
     const second = sensor || dehum ? (device.humidity_pct == null ? '—' : device.humidity_pct.toFixed(0)+'%') :
       device.power_w == null ? '—' : device.power_w.toLocaleString(undefined,{maximumFractionDigits:1})+' W';
@@ -1058,13 +1024,14 @@ function updateHomeSensors(devices, legacySensor, selectedIds) {
     const reading = document.createElement('td');
     reading.className = 'num'; reading.textContent = first;
     reading.classList.toggle('stale-reading', !metricFresh(0));
+    reading.classList.toggle('tank-full-reading', panFull);
     const detail = document.createElement('td'), line = document.createElement('span');
     line.className = 'home-humidity-reading';
     const value = document.createElement('span');
     value.className = 'num'; value.textContent = second;
     value.classList.toggle('stale-reading', !metricFresh(1));
     const firstLabel = sensor ? 'Temperature' : 'Power state', secondLabel = sensor || dehum ? 'Humidity' : 'Power draw';
-    reading.title = firstLabel+': '+first+'. Last received: '+timeSince(device.updated_at?.[metrics[0]]);
+    reading.title = panFull ? 'Pan full. Last reported: '+timeSince(device.updated_at?.tank_full) : firstLabel+': '+first+'. Last received: '+timeSince(device.updated_at?.[metrics[0]]);
     value.title = secondLabel+': '+second+'. Last received: '+timeSince(device.updated_at?.[metrics[1]]);
     const dot = document.createElement('span');
     dot.className = 'home-freshness'; dot.setAttribute('role','img');
@@ -1077,4 +1044,57 @@ function updateHomeSensors(devices, legacySensor, selectedIds) {
   el('home-status').textContent = everyFresh ? 'Local' : offline ? 'Offline' : anyReading ? 'Last reading' : 'Waiting';
   el('home-status').className = 'badge badge-'+(everyFresh ? 'green' : anyReading || offline ? 'amber' : 'gray');
   el('home-updated').textContent = received.length ? 'Received '+timeSince(new Date(Math.min(...received)).toISOString()) : 'Waiting for device reports';
+}
+
+function updateDehumidifier(s, now = Date.now()) {
+  const fresh = stamp => {
+    const age = now-Date.parse(stamp);
+    return Number.isFinite(age) && age >= 0 && age <= 300000;
+  };
+  const homeManaged = !!s.dehum_managed_by_home;
+  const powerKnown = typeof s.dehum_power === 'boolean';
+  const powerFresh = !s.dehum_error && powerKnown && fresh(s.dehum_last_updated);
+  const tankKnown = typeof s.dehum_tank_full === 'boolean';
+  const tankStamp = Object.hasOwn(s,'dehum_tank_last_updated') ? s.dehum_tank_last_updated : s.dehum_last_updated;
+  const tankFresh = !s.dehum_error && tankKnown && fresh(tankStamp);
+  const full = s.dehum_tank_full === true;
+  const badge = el('dehum-badge'), pan = el('dehum-tank'), error = el('dehum-error');
+  let label = 'N/C', color = 'gray';
+  if (full) {label=tankFresh ? 'Pan full' : 'Pan full (last)'; color=tankFresh ? 'red' : 'amber';}
+  else if (s.dehum_error) {label='Unavailable'; color='red';}
+  else if (powerFresh) {label=s.dehum_power ? 'On' : 'Off'; color=s.dehum_power ? 'green' : 'gray';}
+  else if ((powerKnown && s.dehum_last_updated && !powerFresh) || (tankKnown && tankStamp && !tankFresh)) {label='Stale'; color='amber';}
+  else if (homeManaged || powerKnown || tankKnown) label='Waiting';
+  badge.textContent=label; badge.className='badge badge-'+color;
+  el('dehum-card').classList.toggle('tank-full',full);
+  pan.className='card-sub dehum-pan-status '+(tankFresh ? full ? 'full' : '' : tankKnown ? 'last-known' : 'unknown');
+  pan.textContent=tankFresh ? full ? '⚠ Empty the water pan' : 'Pan: Not full' :
+    tankKnown ? 'Last report: Pan '+(full ? 'full' : 'not full') : 'Pan status unavailable';
+  pan.title=tankKnown ? 'Pan sensor last reported: '+timeSince(tankStamp) : 'No confirmed pan sensor reading. Check the tank-full mapping in Home device settings.';
+  const humidity=el('dehum-humidity');
+  humidity.textContent=s.dehum_humidity == null ? '—' : s.dehum_humidity+'%';
+  humidity.title='Room humidity';
+  const reportStamp=tankKnown ? tankStamp : s.dehum_last_updated;
+  el('dehum-updated').textContent=reportStamp ? (tankKnown ? 'Pan updated ' : 'Received ')+timeSince(reportStamp) : 'Waiting for device report';
+  error.textContent=s.dehum_error || '';
+  error.style.display=s.dehum_error ? '' : 'none';
+  const auto=el('dehum-auto-badge');
+  auto.textContent=homeManaged ? 'Home rules' : 'Auto';
+  auto.className='badge '+(homeManaged ? 'badge-gray' : 'badge-green');
+  auto.style.display=homeManaged || (s.dehum_auto_on && !full && powerFresh) ? '' : 'none';
+  el('s-dehum_auto_enabled').disabled=homeManaged;
+  el('dehum-home-managed').hidden=!homeManaged;
+  const on=el('dehum-on-btn'), off=el('dehum-off-btn');
+  on.className=s.dehum_power === true ? 'btn-amber' : 'btn-dim';
+  off.className=s.dehum_power === false ? 'btn-amber' : 'btn-dim';
+  on.disabled=full;
+  on.title=full ? 'Empty the water pan before turning on' : 'Turn dehumidifier on';
+  const gridW=s.readings?.grid_power_w || 0;
+  const colors=['#f87171','#fbbf24','#34d399'];
+  const active=gridW >= dehumThresholdW ? 2 : gridW >= dehumThresholdW*0.5 ? 1 : 0;
+  for (let i=0;i<3;i++) {
+    const pip=el('dehum-pip-'+i);
+    pip.style.background=i === active ? colors[i] : 'var(--muted)';
+    pip.style.opacity=i === active ? '1' : '.25';
+  }
 }
