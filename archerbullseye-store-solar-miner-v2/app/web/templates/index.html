@@ -35,17 +35,17 @@
     <div class="card flow-card acc-amber">
       <svg viewBox="0 0 1080 240" preserveAspectRatio="xMidYMid meet" aria-label="Live energy flow">
         <!-- static tracks -->
-        <path id="tr-solar" class="flow-path" d="M 450 84 C 475 92, 500 98, 537 108"/>
+        <path id="tr-solar" class="flow-path" d="M 450 64 C 475 78, 500 92, 537 108"/>
         <path id="tr-batt"  class="flow-path" d="M 174 120 L 534 120"/>
-        <path id="tr-grid"  class="flow-path" d="M 537 132 C 500 142, 475 148, 450 156"/>
-        <path id="tr-home"  class="flow-path" d="M 583 108 C 700 90, 820 82, 910 84"/>
-        <path id="tr-miner" class="flow-path" d="M 583 132 C 700 150, 820 158, 910 156"/>
+        <path id="tr-grid"  class="flow-path" d="M 537 132 C 500 148, 475 162, 450 176"/>
+        <path id="tr-home"  class="flow-path" d="M 583 108 C 660 90, 750 82, 820 84"/>
+        <path id="tr-miner" class="flow-path" d="M 583 132 C 660 150, 750 158, 820 156"/>
         <!-- animated overlays (direction: toward hub by default, .rev = away) -->
-        <path id="fl-solar" class="flow-anim" style="color:#fbbf24;stroke:#fbbf24;" d="M 450 84 C 475 92, 500 98, 537 108"/>
+        <path id="fl-solar" class="flow-anim" style="color:#fbbf24;stroke:#fbbf24;" d="M 450 64 C 475 78, 500 92, 537 108"/>
         <path id="fl-batt"  class="flow-anim" style="color:#34d399;stroke:#34d399;" d="M 174 120 L 534 120"/>
-        <path id="fl-grid"  class="flow-anim" style="color:#60a5fa;stroke:#60a5fa;" d="M 537 132 C 500 142, 475 148, 450 156"/>
-        <path id="fl-home"  class="flow-anim" style="color:#fb7185;stroke:#fb7185;" d="M 583 108 C 700 90, 820 82, 910 84"/>
-        <path id="fl-miner" class="flow-anim" style="color:#a78bfa;stroke:#a78bfa;" d="M 583 132 C 700 150, 820 158, 910 156"/>
+        <path id="fl-grid"  class="flow-anim" style="color:#60a5fa;stroke:#60a5fa;" d="M 537 132 C 500 148, 475 162, 450 176"/>
+        <path id="fl-home"  class="flow-anim" style="color:#fb7185;stroke:#fb7185;" d="M 583 108 C 660 90, 750 82, 820 84"/>
+        <path id="fl-miner" class="flow-anim" style="color:#a78bfa;stroke:#a78bfa;" d="M 583 132 C 660 150, 750 158, 820 156"/>
 
         <!-- hub (inverter) -->
         <g>
@@ -54,17 +54,17 @@
           <text x="560" y="127" text-anchor="middle" font-size="20">⚡</text>
         </g>
 
-        <!-- Solar node (upper-left of hub, close to the battery line) -->
-        <g>
-          <circle class="flow-node-bg" cx="430" cy="68" r="28" stroke="rgba(251,191,36,.5)"/>
-          <text class="flow-icon" x="430" y="78" text-anchor="middle">☀️</text>
-          <text class="flow-cap" x="388" y="54" text-anchor="end">Solar</text>
-          <text class="flow-val num" id="fv-solar" x="388" y="76" text-anchor="end">—</text>
-          <text class="flow-sub" id="fs-solar" x="388" y="92" text-anchor="end"></text>
+        <!-- Solar node (upper-left of hub, above the battery line) -->
+        <g data-flow-node="solar">
+          <circle class="flow-node-bg" cx="430" cy="48" r="28" stroke="rgba(251,191,36,.5)"/>
+          <text class="flow-icon" x="430" y="58" text-anchor="middle">☀️</text>
+          <text class="flow-cap" x="388" y="34" text-anchor="end">Solar</text>
+          <text class="flow-val num" id="fv-solar" x="388" y="56" text-anchor="end">—</text>
+          <text class="flow-sub" id="fs-solar" x="388" y="72" text-anchor="end"></text>
         </g>
 
         <!-- Battery node (left) — the SOC ring gauge lives here -->
-        <g>
+        <g data-flow-node="battery">
           <circle class="flow-node-bg" cx="140" cy="120" r="34" stroke="transparent"/>
           <circle cx="140" cy="120" r="34" fill="none" stroke="rgba(148,163,184,.14)" stroke-width="6.5"/>
           <circle id="soc-ring" cx="140" cy="120" r="34" fill="none" stroke="#34d399" stroke-width="6.5"
@@ -76,34 +76,34 @@
           <text class="flow-sub" id="fs-batt" x="140" y="190" text-anchor="middle"></text>
         </g>
 
-        <!-- Grid node (lower-left of hub, close to the battery line) -->
-        <g>
-          <circle class="flow-node-bg" cx="430" cy="172" r="28" stroke="rgba(96,165,250,.5)"/>
-          <g class="grid-pylon" transform="translate(430,173)">
+        <!-- Grid node (lower-left of hub, below the battery line) -->
+        <g data-flow-node="grid">
+          <circle class="flow-node-bg" cx="430" cy="192" r="28" stroke="rgba(96,165,250,.5)"/>
+          <g class="grid-pylon" transform="translate(430,193)">
             <path d="M 0,-21 L -13,-10 M 0,-21 L 13,-10 M -13,-10 L -17,1 M 13,-10 L 17,1 M -17,1 L -23,18 M 17,1 L 23,18 M -23,18 L 23,18 M -17,1 L 23,18 M 17,1 L -23,18"/>
             <circle cx="-13" cy="-10" r="1.8"/><circle cx="13" cy="-10" r="1.8"/>
             <circle cx="-17" cy="1" r="1.8"/><circle cx="17" cy="1" r="1.8"/>
           </g>
-          <text class="flow-cap" x="388" y="158" text-anchor="end">Grid</text>
-          <text class="flow-val num" id="fv-grid" x="388" y="180" text-anchor="end">—</text>
-          <text class="flow-sub" id="fs-grid" x="388" y="196" text-anchor="end"></text>
+          <text class="flow-cap" x="388" y="178" text-anchor="end">Grid</text>
+          <text class="flow-val num" id="fv-grid" x="388" y="200" text-anchor="end">—</text>
+          <text class="flow-sub" id="fs-grid" x="388" y="216" text-anchor="end"></text>
         </g>
 
         <!-- Home node (right upper) -->
-        <g>
-          <circle class="flow-node-bg" cx="930" cy="68" r="28" stroke="rgba(251,113,133,.5)"/>
-          <text class="flow-icon" x="930" y="78" text-anchor="middle">🏠</text>
-          <text class="flow-cap" x="972" y="54" text-anchor="start">Home</text>
-          <text class="flow-val num" id="fv-home" x="972" y="76" text-anchor="start">—</text>
+        <g data-flow-node="home">
+          <circle class="flow-node-bg" cx="840" cy="68" r="28" stroke="rgba(251,113,133,.5)"/>
+          <text class="flow-icon" x="840" y="78" text-anchor="middle">🏠</text>
+          <text class="flow-cap" x="882" y="54" text-anchor="start">Home</text>
+          <text class="flow-val num" id="fv-home" x="882" y="76" text-anchor="start">—</text>
         </g>
 
         <!-- Miner node (right lower) -->
-        <g>
-          <circle class="flow-node-bg" cx="930" cy="172" r="28" stroke="rgba(167,139,250,.5)"/>
-          <text class="flow-icon" x="930" y="182" text-anchor="middle">⛏️</text>
-          <text class="flow-cap" x="972" y="158" text-anchor="start">Miners</text>
-          <text class="flow-val num" id="fv-miner" x="972" y="180" text-anchor="start">—</text>
-          <text class="flow-sub" id="fs-miner" x="972" y="196" text-anchor="start"></text>
+        <g data-flow-node="miner">
+          <circle class="flow-node-bg" cx="840" cy="172" r="28" stroke="rgba(167,139,250,.5)"/>
+          <text class="flow-icon" x="840" y="182" text-anchor="middle">⛏️</text>
+          <text class="flow-cap" x="882" y="158" text-anchor="start">Miners</text>
+          <text class="flow-val num" id="fv-miner" x="882" y="180" text-anchor="start">—</text>
+          <text class="flow-sub" id="fs-miner" x="882" y="196" text-anchor="start"></text>
         </g>
       </svg>
     </div>
@@ -176,9 +176,11 @@
     <div class="stats-grid">
       <div class="card stat-card acc-teal home-card">
         <div class="home-card-head">
-          <div class="card-label">⌂ Home Assistant</div>
+          <div class="card-label">⌂ Home Asst</div>
+          <span class="badge badge-gray" id="home-status" title="Not configured">Not configured</span>
           <button type="button" class="btn-settings home-settings-button" aria-label="Home settings" title="Home settings" onclick="location.href='/home#dashboard'">⚙</button>
         </div>
+        <div class="home-readings-wrap">
         <table class="home-readings" aria-label="Home sensor readings">
           <thead>
             <tr><th scope="col">Name</th><th scope="col" id="home-reading-heading">Temp</th><th scope="col" id="home-detail-heading">Humidity</th></tr>
@@ -196,8 +198,8 @@
             </tr>
           </tbody>
         </table>
-        <div class="home-footer"><span class="badge badge-gray" id="home-status">Not configured</span></div>
-        <div class="card-sub" id="home-updated">Local Zigbee sensor</div>
+        </div>
+        <div class="card-sub" id="home-updated">Waiting for device reports</div>
       </div>
       <div class="card stat-card acc-teal" id="dehum-card">
         <div class="card-label">💧 Dehumidifier</div>

@@ -964,3 +964,7 @@ dialog footer {
 .dashboard-device-option small {display:block;margin-top:5px;color:var(--muted);}
 .dashboard-visibility {margin-left:auto;color:var(--muted);font-size:12px;}
 .dashboard-preview-link {color:var(--blue);font-size:13px;}
+
+@media (min-width:651px) {
+  .sidebar .nav-item[data-view="activity"] { margin-top:18px; }
+}

@@ -290,3 +290,14 @@ window height across the three main rows so the bottom charts remain visible.
 Long lists scroll inside their cards. Ramp Activity stays in its original place
 with its existing event list. The mobile layout continues to stack vertically.
 Verified locally at 1280×720, 1366×768, and 1512×740 with simulated readings.
+
+### Dashboard polish (v2.6.1)
+
+The Home card is titled **Home Asst**, with its Local/status badge beside the
+title. Received is pinned to the bottom and turns red when the newest reading
+among selected devices is more than 10 minutes old. Its age keeps updating even
+if a status refresh fails, and a new reading clears the warning. Long device
+lists scroll above the footer. Home navigation is Devices, Automations, Activity,
+then Dashboard card, with extra space before Activity. The energy-flow diagram
+has balanced outer margins, with Home/Miners shifted left and Solar/Grid farther
+above/below the battery line; static and animated connections follow the nodes.

@@ -970,7 +970,20 @@ el('eff-month-select').addEventListener('change', function () {
 // ── Boot ───────────────────────────────────────────────────────
 setInterval(() => { refresh(); loadHistory(); loadDailySats(); loadMinerProfiles(); }, 30000);
 window.addEventListener('load', () => { refresh(); loadHistory(); loadDailySats(); loadMinerProfiles(); });
+// Keep the received age accurate even when a status request fails.
+setInterval(() => updateHomeReceived(), 1000);
 
+
+function updateHomeReceived(stamp = el('home-updated').dataset.receivedAt) {
+  const received = el('home-updated');
+  const time = Date.parse(stamp);
+  const valid = Number.isFinite(time);
+  received.dataset.receivedAt = valid ? stamp : '';
+  const old = valid && Date.now() - time > 10 * 60 * 1000;
+  received.classList.toggle('received-old', old);
+  received.title = valid ? 'Most recent selected-device reading' + (old ? ' · Over 10 minutes old' : '') : '';
+  if (valid) received.textContent = 'Received ' + timeSince(stamp);
+}
 
 function updateHomeSensors(devices, legacySensor, selectedIds) {
   const explicit = Array.isArray(selectedIds);
@@ -994,7 +1007,9 @@ function updateHomeSensors(devices, legacySensor, selectedIds) {
     row.append(cell); body.append(row);
     el('home-status').textContent = explicit ? 'Hidden' : 'Not configured';
     el('home-status').className = 'badge badge-gray';
+    el('home-status').title = el('home-status').textContent;
     el('home-updated').textContent = 'Choose devices in Home settings';
+    updateHomeReceived(null);
     return;
   }
   const now = Date.now(), received = [];
@@ -1043,7 +1058,12 @@ function updateHomeSensors(devices, legacySensor, selectedIds) {
   const offline = rows.every(device => device.status === 'offline');
   el('home-status').textContent = everyFresh ? 'Local' : offline ? 'Offline' : anyReading ? 'Last reading' : 'Waiting';
   el('home-status').className = 'badge badge-'+(everyFresh ? 'green' : anyReading || offline ? 'amber' : 'gray');
-  el('home-updated').textContent = received.length ? 'Received '+timeSince(new Date(Math.min(...received)).toISOString()) : 'Waiting for device reports';
+  el('home-status').title = el('home-status').textContent;
+  if (received.length) updateHomeReceived(new Date(Math.max(...received)).toISOString());
+  else {
+    el('home-updated').textContent = 'Waiting for device reports';
+    updateHomeReceived(null);
+  }
 }
 
 function updateDehumidifier(s, now = Date.now()) {
