@@ -4,7 +4,7 @@ name: Solar Miner v2
 tagline: Solar-surplus-driven Bitcoin mining and load control
 icon: https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
 category: bitcoin
-version: "2.6.1"
+version: "2.7.0"
 port: 3002
 description: >-
   Monitor your Solis solar inverter and automatically control your LuxOS
@@ -34,6 +34,12 @@ support: https://github.com/ArcherBullseye/solarv2/issues
 gallery:
   - https://raw.githubusercontent.com/ArcherBullseye/ubiquitous-octo-funicular/master/archerbullseye-store-solar-miner-v2/icon.svg
 releaseNotes: >-
+  v2.7.0 adds a small battery charge-limit dial showing the SolisCloud
+  BMS allowance alongside actual battery power. The comparison reference
+  is adjustable in Solar System settings. Ramp Activity now includes the
+  day and date. Home Asst freshness dots stay visible beside wider readings.
+
+
   v2.6.1: Renamed the dashboard card Home Asst and moved its Local/status
   badge into the header. Received stays at the bottom and turns red when
   the latest selected-device reading is over 10 minutes old. The age keeps

@@ -41,6 +41,7 @@ def create_blueprint(state: AppState, fleet: MinerFleet) -> Blueprint:
         settings = get_settings()
         tz = state.tz_offset_seconds()
         snapshot["pv_efficiency"] = get_pv_efficiency(local_now(tz).month)
+        snapshot["battery_charge_reference_kw"] = settings["battery_charge_reference_kw"]
         snapshot["pv_peak_kw"] = float(settings.get("pv_peak_kw") or 0.0)
         snapshot["eod_soc_target"] = float(settings.get("eod_soc_target") or 80.0)
         snapshot["eod_soc_target_enabled"] = bool(settings.get("eod_soc_target_enabled", False))

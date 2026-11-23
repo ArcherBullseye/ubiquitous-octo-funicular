@@ -36,13 +36,13 @@
       <svg viewBox="0 0 1080 240" preserveAspectRatio="xMidYMid meet" aria-label="Live energy flow">
         <!-- static tracks -->
         <path id="tr-solar" class="flow-path" d="M 450 64 C 475 78, 500 92, 537 108"/>
-        <path id="tr-batt"  class="flow-path" d="M 174 120 L 534 120"/>
+        <path id="tr-batt"  class="flow-path" d="M 244 120 L 534 120"/>
         <path id="tr-grid"  class="flow-path" d="M 537 132 C 500 148, 475 162, 450 176"/>
         <path id="tr-home"  class="flow-path" d="M 583 108 C 660 90, 750 82, 820 84"/>
         <path id="tr-miner" class="flow-path" d="M 583 132 C 660 150, 750 158, 820 156"/>
         <!-- animated overlays (direction: toward hub by default, .rev = away) -->
         <path id="fl-solar" class="flow-anim" style="color:#fbbf24;stroke:#fbbf24;" d="M 450 64 C 475 78, 500 92, 537 108"/>
-        <path id="fl-batt"  class="flow-anim" style="color:#34d399;stroke:#34d399;" d="M 174 120 L 534 120"/>
+        <path id="fl-batt"  class="flow-anim" style="color:#34d399;stroke:#34d399;" d="M 244 120 L 534 120"/>
         <path id="fl-grid"  class="flow-anim" style="color:#60a5fa;stroke:#60a5fa;" d="M 537 132 C 500 148, 475 162, 450 176"/>
         <path id="fl-home"  class="flow-anim" style="color:#fb7185;stroke:#fb7185;" d="M 583 108 C 660 90, 750 82, 820 84"/>
         <path id="fl-miner" class="flow-anim" style="color:#a78bfa;stroke:#a78bfa;" d="M 583 132 C 660 150, 750 158, 820 156"/>
@@ -64,7 +64,7 @@
         </g>
 
         <!-- Battery node (left) — the SOC ring gauge lives here -->
-        <g data-flow-node="battery">
+        <g data-flow-node="battery" transform="translate(70,0)">
           <circle class="flow-node-bg" cx="140" cy="120" r="34" stroke="transparent"/>
           <circle cx="140" cy="120" r="34" fill="none" stroke="rgba(148,163,184,.14)" stroke-width="6.5"/>
           <circle id="soc-ring" cx="140" cy="120" r="34" fill="none" stroke="#34d399" stroke-width="6.5"
@@ -74,6 +74,18 @@
           <text class="flow-cap" x="140" y="72" text-anchor="middle">Battery</text>
           <text class="flow-val num" id="fv-batt" x="140" y="174" text-anchor="middle">—</text>
           <text class="flow-sub" id="fs-batt" x="140" y="190" text-anchor="middle"></text>
+        </g>
+
+        <!-- Smaller companion dial for the BMS allowance, separate from SOC. -->
+        <g id="battery-allowance" role="img" aria-label="Battery charge allowance unavailable" data-state="unknown">
+          <title id="battery-allowance-title">Waiting for BMS charge allowance</title>
+          <text class="allowance-caption" x="85" y="78" text-anchor="middle">CHARGE LIMIT</text>
+          <circle class="allowance-track" cx="85" cy="120" r="24"/>
+          <circle class="allowance-ring" id="battery-allowance-ring" cx="85" cy="120" r="24" pathLength="100"
+                  stroke-dasharray="100 100" stroke-dashoffset="100" transform="rotate(-90 85 120)"/>
+          <text class="allowance-percent num" id="battery-allowance-percent" x="85" y="125" text-anchor="middle">—</text>
+          <text class="allowance-value num" id="battery-allowance-value" x="85" y="174" text-anchor="middle">—</text>
+          <text class="allowance-detail" id="battery-allowance-status" x="85" y="190" text-anchor="middle">Not reported</text>
         </g>
 
         <!-- Grid node (lower-left of hub, below the battery line) -->
@@ -341,6 +353,11 @@
             <label>Battery Capacity (kWh)</label>
             <input type="number" id="s-battery_capacity_kwh" step="0.1" min="0" placeholder="e.g. 10.0" />
             <div class="form-hint">Total usable battery capacity — used to estimate charge time.</div>
+          </div>
+          <div class="form-group">
+            <label>Normal battery charge allowance (kW)</label>
+            <input type="number" id="s-battery_charge_reference_kw" step="0.1" min="0" />
+            <div class="form-hint">Dashboard comparison only. Two LG RESU16H Prime packs are rated at 14 kW combined (7 kW each). Set 0 to hide the comparison. The BMS allowance is not a guarantee of achievable charge power; solar and inverter limits also apply.</div>
           </div>
           <div class="form-group">
             <label>PV Peak Power (kW)</label>

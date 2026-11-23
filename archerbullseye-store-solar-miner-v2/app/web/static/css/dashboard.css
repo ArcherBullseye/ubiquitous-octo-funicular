@@ -337,15 +337,16 @@ main {
 
 /* ── Ramp activity (below the forecast) ─────────────────────── */
 #ramp-log-card { display: none; border-top: 2px solid rgba(251, 191, 36, .35); }
-.ramp-log { margin-top: 2px; max-height: 96px; overflow-y: auto; }
+.ramp-log { margin-top: 2px; max-height: 102px; overflow-y: auto; }
 .ramp-log::-webkit-scrollbar { width: 4px; }
 .ramp-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 .ramp-ev {
-  display: grid; grid-template-columns: 54px 1fr auto; gap: 10px; align-items: baseline;
+  display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 10px; align-items: baseline;
   padding: 4px 2px; border-bottom: 1px solid var(--border-soft); font-size: 11.5px;
 }
 .ramp-ev:last-child { border-bottom: none; }
-.ramp-ev .rl-time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 10px; }
+.ramp-ev .rl-time { display: flex; flex-direction: column; line-height: 1.25; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 10px; }
+.ramp-ev .rl-day { color: var(--text); font-size: 10px; }
 .ramp-ev .rl-what { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ramp-ev .rl-why { color: var(--muted); font-size: 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ramp-ev .rl-dry { color: var(--amber); font-size: 9px; font-weight: 800; letter-spacing: .05em; }
@@ -490,11 +491,12 @@ main {
 .home-readings thead th { color: var(--muted); font-size: 11px; font-weight: 500; border-bottom: 1px solid var(--border-soft); }
 .home-readings thead th:nth-child(2) { width: 2.95rem; }
 .home-readings th:nth-child(2), .home-readings td:nth-child(2) { text-align: center; }
-.home-readings thead th:nth-child(3) { width: 3rem; }
+.home-readings thead th:nth-child(3) { width: 5.25rem; }
 .home-readings tbody th { overflow: hidden; text-overflow: ellipsis; font-size: 11px; font-weight: 500; }
 .home-readings td { color: var(--text); font-size: 12px; font-weight: 700; }
-.home-humidity-reading { display: inline-flex; align-items: center; gap: 5px; }
-.home-freshness { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.home-humidity-reading { display: flex; align-items: center; justify-content: flex-end; gap: 5px; min-width: 0; padding-right: 1px; }
+.home-humidity-reading > .num { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.home-freshness { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .home-freshness[data-state="fresh"] { background: var(--green); }
 .home-freshness[data-state="stale"] { background: var(--amber); }
 .home-readings .stale-reading { color: var(--muted); }
@@ -550,3 +552,17 @@ main {
   .chart-wrap { min-height: 0; max-height: none; }
   .chart-wrap canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
 }
+
+/* Smaller companion dial; same viewBox and dashboard height. */
+.allowance-caption { font-size: 11px; font-weight: 600; letter-spacing: 1px; fill: var(--muted); }
+.allowance-track { fill: rgba(96,165,250,.035); stroke: rgba(148,163,184,.14); stroke-width: 4; }
+.allowance-ring { fill: none; stroke: var(--blue); stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset .6s ease, stroke .4s ease; }
+.allowance-percent { font-size: 16px; font-weight: 700; fill: var(--blue); }
+.allowance-value { font-size: 17px; font-weight: 650; fill: var(--text); }
+.allowance-detail { font-size: 12px; fill: var(--muted); }
+#battery-allowance[data-state="blocked"] .allowance-percent { fill: var(--amber); }
+#battery-allowance[data-state="stale"] .allowance-percent,
+#battery-allowance[data-state="stale"] .allowance-value,
+#battery-allowance[data-state="unknown"] .allowance-percent,
+#battery-allowance[data-state="unknown"] .allowance-value { fill: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .allowance-ring { transition: none; } }

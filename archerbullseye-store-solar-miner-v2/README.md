@@ -301,3 +301,33 @@ lists scroll above the footer. Home navigation is Devices, Automations, Activity
 then Dashboard card, with extra space before Activity. The energy-flow diagram
 has balanced outer margins, with Home/Miners shifted left and Solar/Grid farther
 above/below the battery line; static and animated connections follow the nodes.
+
+### Battery charge allowance (v2.7.0)
+A small blue companion circle to the left of the battery shows the BMS
+charge-current allowance from SolisCloud as a share of the normal reference.
+Approximate DC power (allowed amps × reported battery voltage) appears below
+it; amps, source timestamp, and interpretation are available on hover. The
+main battery bubble is shifted right and continues to show actual charge or
+discharge power. The dim arc shows the difference from the normal reference.
+The comparison reference defaults to 14 kW, the combined rating of two LG
+RESU16H Prime packs at 7 kW each. Adjust the reference in Settings → Solar
+System for your battery bank, or use 0 to show the allowance without the
+percentage comparison. This reference is display-only and does not change
+miner control, charge reserve, or inverter/battery settings. A reduced BMS
+allowance does not identify its cause or guarantee achievable charge power.
+Solar availability, battery ratings and inverter settings also constrain charging.
+
+Missing/invalid current or units show unavailable, zero is preserved, and
+offline, missing-timestamp or reports older than 10 minutes show stale. Age
+uses the inverter's dataTimestamp, not the time the cloud request succeeded.
+A successful re-fetch of the same old report cannot make it fresh.
+The gauge uses SolisCloud. The LG battery monitoring page can provide cell
+temperatures and charge limits separately when the battery is reachable on
+the local network.
+
+Sources: [SolisCloud API V2.0](https://oss.soliscloud.com/templet/SolisCloud%20Platform%20API%20Document%20V2.0.pdf),
+[LG RESU16H Prime specification](https://www.lgessbattery.com/ImageServlet?imageType=PRODUCT&imgPath=20220701171417442%5B20220701171417442%5D.pdf).
+
+Ramp Activity shows the weekday and date above the event time. Hover to see
+the full date and timezone. Home Asst reserves space for each freshness dot
+when plug power readings are wide.

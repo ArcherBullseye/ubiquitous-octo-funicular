@@ -55,6 +55,9 @@ SCHEMA: Dict[str, Setting] = {
 
     # ── Solar system ─────────────────────────────────────────────
     "battery_capacity_kwh": Setting(0.0, "float"),
+    # Display reference for this installation: two 7 kW LG RESU16H Prime packs.
+    # This does not change charging settings or control decisions.
+    "battery_charge_reference_kw": Setting(14.0, "float"),
     "pv_peak_kw":           Setting(0.0, "float"),
 
     # ── Power-profile ramp (surplus tracking) ────────────────────

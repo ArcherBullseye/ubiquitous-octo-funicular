@@ -79,6 +79,43 @@ function updateFlow(r, s, minersKw) {
   setFlow('fl-miner', mw > MIN, false);              // hub → miners
 }
 
+// BMS allowance is distinct from actual charging and from inverter AC rating.
+function batteryAllowanceView(readings, referenceKw, now = Date.now()) {
+  const a = readings?.battery_charge_allowance;
+  const amps = a?.current_a, watts = a?.estimated_power_w;
+  const known = typeof amps === 'number' && Number.isFinite(amps) && amps >= 0;
+  const powerKnown = typeof watts === 'number' && Number.isFinite(watts) && watts >= 0;
+  const age = now - Date.parse(a?.reported_at);
+  const fresh = known && a.online === true && Number.isFinite(age) && age >= -60000 && age <= 600000;
+  const reference = Number.isFinite(referenceKw) && referenceKw > 0 ? referenceKw * 1000 : 0;
+  const ratio = powerKnown && reference > 0 ? Math.max(0,Math.min(1,watts/reference)) : null;
+  const state = !known ? 'unknown' : !fresh ? 'stale' : amps === 0 ? 'blocked' : ratio != null && ratio < .98 ? 'reduced' : 'available';
+  const value = powerKnown ? '≈ '+(watts/1000).toFixed(2)+' kW' : known ? amps.toFixed(1)+' A' : '—';
+  const percent = ratio == null ? '' : Math.round(ratio*100)+'% of '+(reference/1000).toFixed(1)+' kW';
+  const status = state === 'unknown' ? 'Not reported' : state === 'stale' ? 'Last report · stale' : state === 'blocked' ? 'Zero charge allowance' : percent || 'Reported allowance';
+  const allowance = fresh ? (ratio ?? 0) : 0;
+  const detail = 'BMS charge allowance: '+value+(known ? ' ('+amps.toFixed(1)+' A)' : '')+'. '+status+
+    '. Blue ring: reported allowance as a share of the normal reference. The main battery reading shows actual charging or discharging. '+
+    'Power is estimated from BMS current limit × battery voltage. Solar availability, battery ratings and inverter settings may further limit charging. '+
+    'The reason for a reduced allowance is not reported; temperature fields are not verified. '+
+    (a?.reported_at ? 'SolisCloud report: '+a.reported_at : 'No report timestamp.');
+  return {state,value,status,percent: ratio == null ? '—' : Math.round(ratio*100)+'%',
+    reference: reference > 0 ? 'of '+(reference/1000).toFixed(1)+' kW' : known ? amps.toFixed(1)+' A' : 'Not reported',allowance,detail};
+}
+let batteryAllowanceSnapshot = null;
+function updateBatteryAllowance(snapshot) {
+  if (snapshot !== undefined) batteryAllowanceSnapshot = snapshot;
+  const s = batteryAllowanceSnapshot || {};
+  const v = batteryAllowanceView(s.readings, s.battery_charge_reference_kw);
+  el('battery-allowance').dataset.state = v.state;
+  el('battery-allowance').setAttribute('aria-label',v.detail);
+  el('battery-allowance-title').textContent = v.detail;
+  el('battery-allowance-value').textContent = v.value;
+  el('battery-allowance-status').textContent = v.state === 'stale' ? 'Last report · stale' : v.state === 'unknown' ? 'Not reported' : v.state === 'blocked' ? 'Zero allowance' : v.reference;
+  el('battery-allowance-percent').textContent = v.percent;
+  el('battery-allowance-ring').setAttribute('stroke-dashoffset',String(100*(1-v.allowance)));
+}
+
 // ── SOC ring (battery node in the flow diagram) ────────────────
 function updateSocRing(soc) {
   const ring = el('soc-ring');
@@ -305,6 +342,7 @@ async function refresh() {
       banner.classList.remove('visible');
     }
 
+    updateBatteryAllowance(s);
     const r = s.readings;
     if (r) {
       updateSocRing(r.soc);
@@ -595,12 +633,16 @@ async function loadRampLog() {
       return;
     }
     box.innerHTML = evs.map(e => {
-      const t = new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const date = new Date(e.ts), valid = e.ts != null && Number.isFinite(date.getTime());
+      const day = valid ? date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' }) : 'Unknown date';
+      const t = valid ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+      const full = valid ? date.toLocaleString([], { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }) : 'Unknown event time';
+      const stamp = valid ? ` datetime="${date.toISOString()}"` : '';
       const hw = e.headroom_w || 0;
       const why = `SOC ${(e.soc || 0).toFixed(0)}% · `
         + (hw >= 0 ? `surplus +${(hw / 1000).toFixed(1)} kW` : `deficit ${(hw / 1000).toFixed(1)} kW`);
       const dry = e.armed ? '' : ' <span class="rl-dry">DRY</span>';
-      return `<div class="ramp-ev"><span class="rl-time">${t}</span>`
+      return `<div class="ramp-ev"><time class="rl-time"${stamp} title="${full}"><span class="rl-day">${day}</span><span>${t}</span></time>`
            + `<span class="rl-what">${e.detail}${dry}</span>`
            + `<span class="rl-why">${why}</span></div>`;
     }).join('');
@@ -971,7 +1013,7 @@ el('eff-month-select').addEventListener('change', function () {
 setInterval(() => { refresh(); loadHistory(); loadDailySats(); loadMinerProfiles(); }, 30000);
 window.addEventListener('load', () => { refresh(); loadHistory(); loadDailySats(); loadMinerProfiles(); });
 // Keep the received age accurate even when a status request fails.
-setInterval(() => updateHomeReceived(), 1000);
+setInterval(() => { updateHomeReceived(); updateBatteryAllowance(); }, 1000);
 
 
 function updateHomeReceived(stamp = el('home-updated').dataset.receivedAt) {

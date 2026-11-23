@@ -1,3 +1,4 @@
+import math
 import hashlib
 import hmac
 import base64
@@ -83,6 +84,7 @@ def parse_power_and_soc(inverter_data: dict) -> dict:
     load_power_w = max(0.0, float(inverter_data.get("familyLoadPowerOrigin") or 0.0) - backup_power_w)
 
     return {
+        "battery_charge_allowance": parse_charge_allowance(inverter_data),
         "soc": soc,
         "battery_power_w": battery_power_w,
         "input_power_w": input_power_w,
@@ -90,3 +92,41 @@ def parse_power_and_soc(inverter_data: dict) -> dict:
         "load_power_w": load_power_w,
         "backup_power_w": backup_power_w,
     }
+
+
+def parse_charge_allowance(data: dict) -> dict:
+    """BMS-reported allowance, not a promise of achievable charging power.
+
+    SolisCloud API V2.0 inverterDetail: batteryChargingCurrent (A) and
+    batteryVoltage (V). I * V is a DC estimate at the reported voltage.
+    Temperature fields are often zero-filled; do not infer a cold alarm.
+    """
+    def number(key, unit_key, unit):
+        value = data.get(key)
+        if isinstance(value, bool) or data.get(unit_key) != unit:
+            return None
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) and value >= 0 else None
+
+    amps = number("batteryChargingCurrent", "batteryChargingCurrentStr", "A")
+    volts = number("batteryVoltage", "batteryVoltageStr", "V")
+    volts = volts if volts and volts > 0 else None
+    watts = amps * volts if amps is not None and volts is not None else None
+    if watts is not None and not math.isfinite(watts):
+        watts = None
+    stamp = None
+    raw_stamp = data.get("dataTimestamp")
+    try:
+        if not isinstance(raw_stamp, bool):
+            seconds = float(raw_stamp) / 1000
+            if 946684800 <= seconds < 4102444800:
+                stamp = datetime.fromtimestamp(seconds, timezone.utc).isoformat()
+    except (TypeError, ValueError, OverflowError):
+        pass
+    return {"current_a": amps, "voltage_v": volts,
+            "estimated_power_w": watts, "reported_at": stamp,
+            "online": not isinstance(data.get("state"), bool) and data.get("state") in (1, "1"),
+            "source": "SolisCloud BMS", "reason": None}
